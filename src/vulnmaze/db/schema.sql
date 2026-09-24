@@ -1,0 +1,72 @@
+-- VulnMaze schema (applied idempotently).
+-- Nothing in this database holds a raw IP address or a plaintext password.
+
+CREATE TABLE IF NOT EXISTS events (
+    id             BIGSERIAL PRIMARY KEY,
+    event_hash     BYTEA       NOT NULL UNIQUE,      -- sha256 of the raw line: idempotent ingest
+    source         TEXT        NOT NULL,             -- 'live' or 'public:<name>'
+    sensor         TEXT,
+    session        TEXT        NOT NULL,
+    eventid        TEXT        NOT NULL,
+    ts             TIMESTAMPTZ NOT NULL,
+    src_ip_hmac    TEXT,
+    src_prefix     CIDR,
+    username       TEXT,
+    password_hmac  TEXT,
+    password_len   INTEGER,
+    input          TEXT,
+    data           JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    ingested_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS events_session_idx ON events (source, session, ts, id);
+CREATE INDEX IF NOT EXISTS events_eventid_ts_idx ON events (eventid, ts);
+CREATE INDEX IF NOT EXISTS events_attacker_idx ON events (src_ip_hmac);
+
+CREATE TABLE IF NOT EXISTS session_digests (
+    source      TEXT        NOT NULL,
+    session     TEXT        NOT NULL,
+    digest      JSONB       NOT NULL,
+    closed      BOOLEAN     NOT NULL DEFAULT false,
+    n_events    INTEGER     NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (source, session)
+);
+CREATE INDEX IF NOT EXISTS session_digests_open_idx ON session_digests (closed, updated_at);
+
+CREATE TABLE IF NOT EXISTS ingest_checkpoints (
+    path        TEXT PRIMARY KEY,
+    inode       BIGINT NOT NULL,
+    "offset"    BIGINT NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ingest_errors (
+    id          BIGSERIAL PRIMARY KEY,
+    source      TEXT NOT NULL,
+    error       TEXT NOT NULL,
+    line_sha256 BYTEA,
+    at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Per-attacker state store. Write-once: a fact is never updated.
+CREATE TABLE IF NOT EXISTS attacker_facts (
+    attacker_key  TEXT        NOT NULL,   -- HMAC of the source IP
+    username      TEXT        NOT NULL,
+    fact          TEXT        NOT NULL,   -- e.g. 'file:/home/bob/notes.txt', 'user:bob', 'banner:mysql'
+    value         JSONB       NOT NULL,
+    created_by    TEXT        NOT NULL DEFAULT 'unknown',   -- e.g. 'cowrie'
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (attacker_key, username, fact)
+);
+
+-- Enforce write-once in the database itself, not only in application code.
+CREATE OR REPLACE FUNCTION attacker_facts_write_once() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'attacker_facts is write-once (fact % for %/%)', OLD.fact, OLD.attacker_key, OLD.username;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS attacker_facts_no_update ON attacker_facts;
+CREATE TRIGGER attacker_facts_no_update
+    BEFORE UPDATE ON attacker_facts
+    FOR EACH ROW EXECUTE FUNCTION attacker_facts_write_once();

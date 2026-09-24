@@ -1,0 +1,147 @@
+# VulnMaze stack.
+#
+#   internet ──► edge (HAProxy, publishes the SSH port)
+#                  │  PROXY protocol, so Cowrie still sees the attacker's IP
+#                  ▼
+#   dmz (internal: no route out) ── cowrie ── writes JSON logs to a volume
+#                                                   │ read-only mount
+#   backend (internal: no route out) ── ingester ◄──┘ ── postgres ── state-api
+#
+# The honeypot container shares no network with the database, and neither
+# internal network has a gateway, so nothing on them can reach the internet.
+# Run from the repository root:  docker compose -f infra/docker-compose.yml up -d --build --wait
+
+name: vulnmaze
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-pipeline-env: &pipeline-env
+  VULNMAZE_DSN: postgresql://vulnmaze:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}@postgres:5432/vulnmaze
+  VULNMAZE_DEID_KEY: ${VULNMAZE_DEID_KEY:?set VULNMAZE_DEID_KEY in infra/.env}
+  TZ: UTC
+
+services:
+  edge:
+    image: haproxy:3.0-alpine
+    <<: *hardening
+    ports:
+      # Dev default binds to localhost only. On the public sensor set
+      # SSH_PUBLISH=0.0.0.0:22 in infra/.env (and move the real sshd first).
+      - "${SSH_PUBLISH:-127.0.0.1:2222}:2222"
+    volumes:
+      - ./edge/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks: [edge, dmz]
+    depends_on:
+      cowrie: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-q", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 10s
+      retries: 3
+
+  cowrie:
+    build:
+      context: ..
+      dockerfile: infra/honeypot/Dockerfile
+    <<: *hardening
+    environment:
+      TZ: UTC
+    volumes:
+      - ./honeypot/cowrie.cfg:/cowrie/etc/cowrie.cfg:ro
+      - cowrie-logs:/cowrie/var/log/cowrie
+      - cowrie-state:/cowrie/var/lib/cowrie
+    tmpfs: [/tmp]
+    networks: [dmz]
+    # Unroutable resolver: if anything inside ever tries DNS, it goes nowhere.
+    dns: [192.0.2.1]
+    mem_limit: 512m
+    pids_limit: 256
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 2222), 2)"]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+
+  postgres:
+    image: postgres:16-alpine
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vulnmaze
+      POSTGRES_USER: vulnmaze
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../src/vulnmaze/db/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vulnmaze -d vulnmaze"]
+      interval: 5s
+      retries: 10
+
+  ingester:
+    build:
+      context: ..
+      dockerfile: infra/pipeline/Dockerfile
+    <<: *hardening
+    command: ["vulnmaze-ingest"]
+    environment:
+      <<: *pipeline-env
+      VULNMAZE_COWRIE_JSON: /cowrie-logs/cowrie.json
+    volumes:
+      - cowrie-logs:/cowrie-logs:ro
+    networks: [backend]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 10s
+
+  state-api:
+    build:
+      context: ..
+      dockerfile: infra/pipeline/Dockerfile
+    <<: *hardening
+    command: ["uvicorn", "vulnmaze.state.api:app", "--host", "0.0.0.0", "--port", "8081"]
+    environment:
+      <<: *pipeline-env
+      VULNMAZE_STATE_TOKEN: ${VULNMAZE_STATE_TOKEN:?set VULNMAZE_STATE_TOKEN in infra/.env}
+    networks: [backend]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=2)"]
+      interval: 10s
+      retries: 5
+
+  # Isolation probe. It sits on the dmz so it can reach the honeypot
+  # through `edge`, and nothing else.
+  #   docker compose -f infra/docker-compose.yml --profile probe up -d
+  probe:
+    profiles: ["probe"]
+    build:
+      context: ..
+      dockerfile: infra/pipeline/Dockerfile
+    <<: *hardening
+    command: ["sleep", "infinity"]
+    dns: [192.0.2.1]
+    networks: [dmz]
+
+networks:
+  edge: {}
+  dmz:
+    internal: true
+  backend:
+    internal: true
+
+volumes:
+  cowrie-logs:
+  cowrie-state:
+  pgdata:

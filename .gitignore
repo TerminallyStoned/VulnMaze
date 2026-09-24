@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+# internal development notes, guides, test suite and scaffolding (never pushed)
+dev/
+# internal planning docs
+ROADMAP.md
+docs/
+# secrets
+infra/.env
+*.key
+# data never goes into git (use DVC / shared drive)
+data/
+*.json.gz
+cowrie.json*
+# Cowrie writes var/lib/cowrie/uuid wherever it is imported
+var/
+dropin.cache
