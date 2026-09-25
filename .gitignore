@@ -6,12 +6,8 @@ __pycache__/
 .ruff_cache/
 dist/
 build/
-# internal development notes, guides, test suite and scaffolding (never pushed)
 dev/
-# internal planning docs
-ROADMAP.md
 docs/
-# secrets
 infra/.env
 *.key
 # data never goes into git (use DVC / shared drive)

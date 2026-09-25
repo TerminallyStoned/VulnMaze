@@ -1,0 +1,93 @@
+# The machine the attacker thinks they are on. The LLM gateway builds its
+# system prompt from this file and checks every model answer against it.
+#
+# It MUST agree with infra/honeypot/cowrie.cfg (hostname, kernel) and with
+# Cowrie's filesystem; a consistency test fails if they drift apart.
+# Verify versions against a real Debian 12 machine before deploying.
+
+hostname: web-portal-01
+os:
+  pretty_name: "Debian GNU/Linux 12 (bookworm)"
+  id: debian
+  version_id: "12"
+  codename: bookworm
+kernel: 6.1.0-21-amd64
+arch: x86_64
+role: >-
+  Public web server for a municipal e-services portal. nginx serves a PHP
+  application from /var/www/portal; MariaDB holds the application database
+  on the same host. Administered over SSH by a small IT team.
+
+# Facts every answer must agree with. Keys are free-form; the values are
+# shown to the model verbatim and some are checked by the contradiction
+# detector (hostname, kernel, OS name and codename).
+facts:
+  primary_ip: 10.20.4.17
+  gateway: 10.20.4.1
+  timezone: Asia/Singapore
+  nginx_version: 1.22.1
+  php_version: 8.2.20
+  mariadb_version: 10.11.6-MariaDB-0+deb12u1
+  openssl_version: 3.0.13
+  database_name: portal
+  web_root: /var/www/portal
+  services_running: nginx, php8.2-fpm, mariadb, ssh, cron, rsyslog
+
+# Command existence. `installed` commands are answered by the LLM (if Cowrie
+# does not already implement them). `absent` commands always get bash's
+# "command not found", with no model call. Anything in neither list is
+# decided by the model once, then pinned for every attacker.
+commands:
+  installed:
+    - systemctl
+    - journalctl
+    - ip
+    - ss
+    - lsblk
+    - lsof
+    - lsb_release
+    - mysql
+    - mariadb
+    - mysqldump
+    - mysqladmin
+    - nginx
+    - php-fpm8.2
+    - openssl
+    - rsync
+    - zip
+    - htop
+    - vmstat
+    - iostat
+    - dpkg
+    - dpkg-query
+    - hostnamectl
+    - timedatectl
+    - logrotate
+    - sshd
+    - update-alternatives
+  absent:
+    - masscan
+    - nmap
+    - zmap
+    - hydra
+    - medusa
+    - john
+    - hashcat
+    - xmrig
+    - docker
+    - podman
+    - kubectl
+    - aws
+    - gcloud
+    - az
+    - terraform
+    - ansible
+    - screen
+    - tmux
+    - go
+    - node
+    - npm
+    - java
+    - ruby
+    - socat
+    - ncat

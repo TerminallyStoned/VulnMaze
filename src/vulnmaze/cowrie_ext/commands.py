@@ -1,9 +1,9 @@
 """Fixed handlers for privilege-boundary commands Cowrie 3.0.14 does not ship.
 
 Without these, `usermod -aG sudo bob` would print "command not found", which
-is both a fingerprint (every Ubuntu box has usermod) and a candidate for
-LLM escalation. The router already marks them PRIVILEGE; these handlers make
-sure the answer is fixed and plausible.
+is both a fingerprint (every Ubuntu box has usermod) and a
+candidate for LLM escalation. The router already marks them PRIVILEGE; these
+handlers make sure the answer is fixed and plausible.
 
 Outputs mirror Debian 12 run as root (the persona; see persona/README.md). Keep them boring: silent success is
 what the real tools print.

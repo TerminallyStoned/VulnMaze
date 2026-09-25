@@ -1,0 +1,11 @@
+# NVIDIA GPU for the model server. Needs the NVIDIA Container Toolkit on the host.
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.gpu.yml up -d --wait
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

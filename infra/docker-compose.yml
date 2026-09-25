@@ -3,12 +3,18 @@
 #   internet ──► edge (HAProxy, publishes the SSH port)
 #                  │  PROXY protocol, so Cowrie still sees the attacker's IP
 #                  ▼
-#   dmz (internal: no route out) ── cowrie ── writes JSON logs to a volume
-#                                                   │ read-only mount
-#   backend (internal: no route out) ── ingester ◄──┘ ── postgres ── state-api
+#   dmz (internal) ──────── cowrie ── writes JSON logs to a volume
+#                             │ HTTP :8090 only             │ read-only mount
+#   hpgw (internal) ──────── llm-gateway                    │
+#                             │                             │
+#   backend (internal) ───── llm-gateway ── postgres ── ingester ── state-api
+#   llm (internal) ───────── llm-gateway ── ollama
 #
-# The honeypot container shares no network with the database, and neither
-# internal network has a gateway, so nothing on them can reach the internet.
+#   egress (normal, profile "models" only) ── ollama-pull  (downloads models, then exits)
+#
+# No internal network has a gateway, so nothing on them can reach the
+# internet. The honeypot shares a network with exactly one service, the LLM
+# gateway, which exposes one HTTP API and re-checks every request.
 # Run from the repository root:  docker compose -f infra/docker-compose.yml up -d --build --wait
 
 name: vulnmaze
@@ -52,12 +58,17 @@ services:
     <<: *hardening
     environment:
       TZ: UTC
+      # Escalation: off | all. "all" sends every eligible stage to the gateway.
+      VULNMAZE_ESCALATION: ${VULNMAZE_ESCALATION:-off}
+      VULNMAZE_GATEWAY_URL: http://llm-gateway:8090
+      VULNMAZE_GATEWAY_TOKEN: ${VULNMAZE_GATEWAY_TOKEN:?set VULNMAZE_GATEWAY_TOKEN in infra/.env}
+      VULNMAZE_GATEWAY_TIMEOUT: "10"
     volumes:
       - ./honeypot/cowrie.cfg:/cowrie/etc/cowrie.cfg:ro
       - cowrie-logs:/cowrie/var/log/cowrie
       - cowrie-state:/cowrie/var/lib/cowrie
     tmpfs: [/tmp]
-    networks: [dmz]
+    networks: [dmz, hpgw]
     # Unroutable resolver: if anything inside ever tries DNS, it goes nowhere.
     dns: [192.0.2.1]
     mem_limit: 512m
@@ -121,6 +132,67 @@ services:
       interval: 10s
       retries: 5
 
+  # LLM gap-filler. The only service the honeypot can talk to.
+  llm-gateway:
+    build:
+      context: ..
+      dockerfile: infra/pipeline/Dockerfile
+    <<: *hardening
+    command: ["uvicorn", "vulnmaze.llm.gateway:app", "--host", "0.0.0.0", "--port", "8090"]
+    environment:
+      <<: *pipeline-env
+      VULNMAZE_GATEWAY_TOKEN: ${VULNMAZE_GATEWAY_TOKEN:?set VULNMAZE_GATEWAY_TOKEN in infra/.env}
+      VULNMAZE_PERSONA: /persona/persona.yml
+      VULNMAZE_LLM_BACKEND: ${VULNMAZE_LLM_BACKEND:-ollama}
+      VULNMAZE_LLM_URL: ${VULNMAZE_LLM_URL:-http://ollama:11434}
+      VULNMAZE_LLM_MODEL: ${VULNMAZE_LLM_MODEL:-llama3.1:8b}
+      VULNMAZE_LLM_MODE: ${VULNMAZE_LLM_MODE:-json}
+      VULNMAZE_LLM_DEADLINE_S: ${VULNMAZE_LLM_DEADLINE_S:-8}
+      VULNMAZE_LLM_CONCURRENCY: ${VULNMAZE_LLM_CONCURRENCY:-2}
+    volumes:
+      - ./persona:/persona:ro
+    networks: [hpgw, backend, llm]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=5)"]
+      interval: 10s
+      retries: 5
+
+  # Local model server. No route to the internet: models are downloaded
+  # once with the ollama-pull job below and kept in the ollama-models volume.
+  # GPU: add  -f infra/docker-compose.gpu.yml
+  ollama:
+    image: ollama/ollama:${OLLAMA_TAG:-latest}
+    <<: *hardening
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: 30m
+      OLLAMA_NUM_PARALLEL: ${VULNMAZE_LLM_CONCURRENCY:-2}
+    volumes:
+      - ollama-models:/root/.ollama
+    tmpfs: [/tmp]
+    networks: [llm]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      retries: 5
+      start_period: 20s
+
+  # One-off model download, the only container with internet access:
+  #   docker compose -f infra/docker-compose.yml --profile models run --rm ollama-pull
+  ollama-pull:
+    profiles: ["models"]
+    image: ollama/ollama:${OLLAMA_TAG:-latest}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["ollama serve & sleep 5 && ollama pull $${VULNMAZE_LLM_MODEL} && ollama list"]
+    environment:
+      VULNMAZE_LLM_MODEL: ${VULNMAZE_LLM_MODEL:-llama3.1:8b}
+    volumes:
+      - ollama-models:/root/.ollama
+    networks: [egress]
+    restart: "no"
+
   # Isolation probe. It sits on the dmz so it can reach the honeypot
   # through `edge`, and nothing else.
   #   docker compose -f infra/docker-compose.yml --profile probe up -d
@@ -138,10 +210,16 @@ networks:
   edge: {}
   dmz:
     internal: true
+  hpgw:
+    internal: true
   backend:
     internal: true
+  llm:
+    internal: true
+  egress: {}
 
 volumes:
   cowrie-logs:
   cowrie-state:
   pgdata:
+  ollama-models:

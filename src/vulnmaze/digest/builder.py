@@ -1,7 +1,7 @@
 """Per-session digest.
 
 A digest is a compact JSON summary of one session: logins, command timeline,
-files, timing and client fingerprint. It is built
+files, timing and client fingerprint, as in Oliveira et al. [2]. It is built
 incrementally, one normalised event at a time, so it is available while the
 session is still running; the ML layer reads it mid-session.
 
@@ -19,7 +19,7 @@ import statistics
 from datetime import datetime
 from typing import Any
 
-DIGEST_VERSION = 1
+DIGEST_VERSION = 2   # adds "llm" counts and commands[].llm
 MAX_LOGIN_ATTEMPTS_KEPT = 200   # brute-force sessions: keep counting, stop listing
 MAX_COMMANDS_KEPT = 2000
 SUBSHELL_WINDOW_S = 0.1         # piped-to-shell commands arrive within a few ms
@@ -48,6 +48,8 @@ def new_digest(source: str, session: str) -> dict[str, Any]:
         "urls": [],
         "files": {"downloads": [], "uploads": []},
         "routes": {"privilege": 0, "deterministic": 0, "escalate_candidate": 0},
+        "llm": {"calls": 0, "generated": 0, "pinned": 0, "not_installed": 0, "refused": 0,
+                "fallback": 0, "gateway_unreachable": 0, "latency_ms_total": 0},
         "timing": {"login_to_first_cmd_s": None, "gaps_s": [], "gap_mean_s": None, "gap_std_s": None},
         "counts": {"events": 0, "commands": 0, "failed_commands": 0, "nested_commands": 0},
         "ttylog_shasum": None,
@@ -162,6 +164,15 @@ def apply(digest: dict[str, Any], event: dict[str, Any], *, inplace: bool = Fals
             # within milliseconds; mark them as nested, not typed.
             until = _ts(event).timestamp() + SUBSHELL_WINDOW_S
             st["subshell_until"] = datetime.fromtimestamp(until, tz=_ts(event).tzinfo).isoformat()
+
+    elif eid == "cowrie.vulnmaze.llm":
+        outcome = event.get("outcome")
+        d["llm"]["calls"] += 1
+        if outcome in d["llm"]:
+            d["llm"][outcome] += 1
+        d["llm"]["latency_ms_total"] += int(event.get("latency_ms") or 0)
+        if d["commands"]:
+            d["commands"][-1].setdefault("llm", []).append(outcome)
 
     elif eid in ("cowrie.session.file_download", "cowrie.session.file_download.failed"):
         d["files"]["downloads"].append({

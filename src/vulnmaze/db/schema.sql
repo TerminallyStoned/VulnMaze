@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS attacker_facts (
     username      TEXT        NOT NULL,
     fact          TEXT        NOT NULL,   -- e.g. 'file:/home/bob/notes.txt', 'user:bob', 'banner:mysql'
     value         JSONB       NOT NULL,
-    created_by    TEXT        NOT NULL DEFAULT 'unknown',   -- e.g. 'cowrie'
+    created_by    TEXT        NOT NULL DEFAULT 'unknown',   -- 'cowrie', 'llm:<model>', 'honeytoken'
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (attacker_key, username, fact)
 );
@@ -70,3 +70,24 @@ DROP TRIGGER IF EXISTS attacker_facts_no_update ON attacker_facts;
 CREATE TRIGGER attacker_facts_no_update
     BEFORE UPDATE ON attacker_facts
     FOR EACH ROW EXECUTE FUNCTION attacker_facts_write_once();
+
+-- One row per request the LLM gateway handled: latency, cost and safety metrics.
+CREATE TABLE IF NOT EXISTS llm_calls (
+    id                 BIGSERIAL PRIMARY KEY,
+    ts                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+    session            TEXT,
+    attacker_key       TEXT,
+    username           TEXT,
+    command            TEXT        NOT NULL,   -- argv joined, attacker IP redacted
+    outcome            TEXT        NOT NULL,   -- generated | pinned | not_installed | refused | fallback
+    reasons            TEXT[]      NOT NULL DEFAULT '{}',
+    attempts           SMALLINT    NOT NULL DEFAULT 0,
+    model              TEXT,
+    latency_ms         INTEGER     NOT NULL,   -- total time in the gateway
+    model_ms           INTEGER,                -- time spent waiting for the model
+    prompt_tokens      INTEGER,
+    completion_tokens  INTEGER,
+    rejected_output    TEXT                    -- first rejected model output (for leak/fabrication analysis)
+);
+CREATE INDEX IF NOT EXISTS llm_calls_ts_idx ON llm_calls (ts);
+CREATE INDEX IF NOT EXISTS llm_calls_outcome_idx ON llm_calls (outcome, ts);
