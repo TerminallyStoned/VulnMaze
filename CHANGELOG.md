@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.1: Fixes from the first full-stack run
+- Ingester never committed (`ingest/service.py`): the connection was not in autocommit mode, so the first SELECT opened a transaction that never closed and every batch became a savepoint inside it. Logs said "inserted", but no other connection saw the rows and a restart lost them. Now `autocommit=True`; same for the public loader.
+- Health checks spammed Cowrie's log with tracebacks: HAProxy's backend `check` and the Docker healthcheck connected without a PROXY header. HAProxy no longer health-checks the single backend; the Cowrie healthcheck reads `/proc/net/tcp` instead of connecting.
+- UTF8 guard: `apply_schema` refuses a non-UTF8 database with a clear message.
+
 ## v0.6: Hardened local LLM gap-filler
 - `vulnmaze.llm`: gateway with route re-check, existence and output pinning, prompt builder, Ollama and OpenAI-compatible backends (json and raw modes), reasoning stripping, anchored leakage detector, output and file-path denylist, persona and stored-fact contradiction checks, one retry, deterministic fallbacks, per-attacker rate limit, global concurrency cap, `llm_calls` log.
 - Cowrie: escalation switch (`VULNMAZE_ESCALATION`, off by default), async LLM command, unimplemented binaries in standard bin directories now count as "Cowrie can't answer", LLM-created files loaded at login with early input (including EOF) held until loaded, `cowrie.vulnmaze.llm` events.

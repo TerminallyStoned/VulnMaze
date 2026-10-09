@@ -75,7 +75,9 @@ services:
     pids_limit: 256
     cpus: 1.0
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 2222), 2)"]
+      # Checks that port 2222 is LISTENing without connecting to it: a
+      # connection without a PROXY header makes Cowrie log a traceback.
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0 if any(l.split()[1].endswith(':08AE') and l.split()[3] == '0A' for l in open('/proc/net/tcp').readlines()[1:]) else 1)"]
       interval: 10s
       retries: 5
       start_period: 20s
