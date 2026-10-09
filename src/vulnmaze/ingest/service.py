@@ -37,7 +37,11 @@ def save_checkpoint(conn: psycopg.Connection, path: str, cp: Checkpoint) -> None
 
 
 def run(dsn: str, path: str, deid: Deidentifier, poll_s: float = 0.5, stop=lambda: False) -> None:
-    with psycopg.connect(dsn) as conn:
+    # autocommit=True is essential: without it the first SELECT below opens
+    # an implicit transaction that is never closed, every `conn.transaction()`
+    # block becomes a savepoint inside it, and nothing is ever committed
+    # (found in the first full-stack run).
+    with psycopg.connect(dsn, autocommit=True) as conn:
         apply_schema(conn)
         tailer = FileTailer(path, load_checkpoint(conn, path))
         ingestor = Ingestor(conn, deid, source="live")

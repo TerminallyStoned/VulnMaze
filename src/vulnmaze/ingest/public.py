@@ -93,7 +93,7 @@ def main() -> None:
     ap.add_argument("--name", required=True, help="dataset tag, stored as source='public:<name>'")
     ap.add_argument("paths", nargs="+")
     args = ap.parse_args()
-    with psycopg.connect(dsn_from_env()) as conn:
+    with psycopg.connect(dsn_from_env(), autocommit=True) as conn:
         apply_schema(conn)
         print(load(conn, args.name, sorted(args.paths), Deidentifier.from_env()))
 
