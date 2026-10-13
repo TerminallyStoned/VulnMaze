@@ -28,9 +28,9 @@ from vulnmaze.ingest.pipeline import Ingestor
 
 log = logging.getLogger("vulnmaze.public")
 
-# old field name -> current Cowrie field name. Empty until a dataset needs it;
-# check a few lines of each new dataset and add what differs.
-ALIASES: dict[str, str] = {}
+# old field name -> current Cowrie field name. Check a few lines of each new
+# dataset and add what differs.
+ALIASES: dict[str, str] = {"ts": "timestamp"}
 
 
 def _open(path: str):
@@ -66,6 +66,7 @@ def iter_events(path: str) -> Iterator[str]:
 
 def _rewrite(rec) -> Iterator[str]:
     if isinstance(rec, dict):
+        rec = {k: v for k, v in rec.items() if v is not None}
         for old, new in ALIASES.items():
             if old in rec and new not in rec:
                 rec[new] = rec.pop(old)

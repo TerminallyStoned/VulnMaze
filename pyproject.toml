@@ -36,6 +36,7 @@ dev = [
 [project.scripts]
 vulnmaze-ingest = "vulnmaze.ingest.service:main"
 vulnmaze-load-public = "vulnmaze.ingest.public:main"
+vulnmaze-label = "vulnmaze.labels.attack_rules:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -45,6 +46,7 @@ namespaces = true
 [tool.setuptools.package-data]
 "vulnmaze.db" = ["*.sql"]
 "vulnmaze.cowrie_ext" = ["persona/*"]
+"vulnmaze.labels" = ["*.yml"]
 "vulnmaze.harness" = ["data/*.yml"]
 
 [tool.pytest.ini_options]

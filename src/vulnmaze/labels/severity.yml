@@ -1,0 +1,64 @@
+reference: Touch, Fink and Colin, Automated Risk Assessment of Shell-Based Attacks Using a LLM, CRiSIS 2024, LNCS, doi 10.1007/978-3-031-89350-6_11
+command_prefixes: 'sudo busybox /bin/busybox nohup exec timeout nice time if then else do while until ! {'
+words:
+  - name: table1_r0
+    level: 0
+    source: Table 1
+    words: ls cd pwd find basename dirname cat grep wc head awk cut uniq sed sort tr file test diff cmp tail xargs seq
+  - name: table1_r1
+    level: 1
+    source: Table 1
+    words: lspci lscpu uname nproc dmidecode df du uptime lsb_release dmesg nvidia-info amd-info nload lsof arch vmstat lsblk fdisk free ps top
+  - name: table1_r2
+    level: 2
+    source: Table 1
+    words: passwd chpasswd hive-passwd touch rm mkdir rmdir mkfifo pkill killall kill netstat ss ip ifconfig hostname arp ping dig nslookup traceroute chown chgrp
+  - name: table1_r3
+    level: 3
+    source: Table 1
+    words: mv cp ln tee chmod dd wget curl tar unzip bzip2 gzip zcat unshar make cmake rake install npm pip composer iptables ufw ssh telnet
+  - name: table1_r4
+    level: 4
+    source: Table 1
+    words: ./ bash sh dash csh ksh nohup nice renice perl python python2 python3 php ruby node java jar
+  - name: added_r0
+    level: 0
+    source: added, R0 description (no lasting change)
+    words: echo printf exit logout clear true sleep which type
+  - name: added_r1
+    level: 1
+    source: added, R1 description (information gathering)
+    words: whoami id w who last groups users env mount hostnamectl getconf
+  - name: added_r3
+    level: 3
+    source: added, R3 description (configuration changes)
+    words: crontab useradd adduser usermod userdel chattr systemctl service history setenforce
+patterns:
+  - name: rm_force_recursive
+    level: 3
+    source: section 5.1, command options
+    pattern: '\brm\s+(?:-\S*[rRf]|--force|--recursive)'
+  - name: echo_base64
+    level: 3
+    source: section 5.1, redirection
+    pattern: '\becho\b.*\bbase64\s+(?:-d|--decode)\b'
+  - name: echo_pipe
+    level: 2
+    source: Table 2, lf_pattern_g1_echo_pipe
+    pattern: '\becho\b[^;&|]*\|'
+  - name: echo_text_redirect
+    level: 3
+    source: Table 2, lf_pattern_g1_echo_text_redirect
+    pattern: '\becho\b[^;&|]*>'
+  - name: added_authorized_keys
+    level: 3
+    source: added, R3 description (configuration changes)
+    pattern: 'authorized_keys'
+  - name: added_history_off
+    level: 3
+    source: added, R3 description (configuration changes)
+    pattern: 'unset\s+HIST|HIST\w*='
+  - name: long_command
+    level: 4
+    source: section 5.1, heuristics
+    pattern: '^.{101,}$'

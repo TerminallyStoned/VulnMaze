@@ -5,6 +5,7 @@ import pytest
 
 from vulnmaze.common.deid import REDACTED, SRC_IP_TOKEN
 from vulnmaze.ingest.normalize import SessionSecrets, event_hash, normalise, parse_ts
+from vulnmaze.ingest.public import _rewrite
 
 
 def _norm(event, deid, secrets):
@@ -67,3 +68,27 @@ def test_a_recorded_session_holds_no_raw_ip_or_password(fixtures, deid):
 def test_event_hash_ignores_surrounding_whitespace():
     """Re-reading the same line with a trailing newline gives the same idempotency key."""
     assert event_hash('{"a":1}\n') == event_hash('{"a":1}')
+
+
+@pytest.mark.parametrize("extra", [
+    {"eventid": "cowrie.command.input", "input": "uname -a"},
+    {"eventid": "cowrie.client.version", "version": "SSH-2.0-Go" + chr(0), "kexAlgs": ["curve25519" + chr(0)]},
+])
+def test_cow160x4_line_loads_without_location_or_nulls(deid, extra):
+    """A COW160x4 line maps `ts` to the timestamp and drops geoip fields, null columns and NUL characters."""
+    rec = {"ts": "2025-06-27 23:09:32.754745", "session": "s1", "src_ip": "1a2b3c4d", "password": None,
+           "src_ip_geoip_city_name": "Amsterdam", "honeypot_ip_geoip_location": "1.3,103.7", "url": None, **extra}
+    line = next(_rewrite(rec))
+    row = normalise(json.loads(line), line, deid, SessionSecrets())
+    assert row.ts == datetime(2025, 6, 27, 23, 9, 32, 754745, tzinfo=UTC)
+    assert not any("geoip" in k or v is None for k, v in row.data.items())
+    assert "u0000" not in json.dumps([row.data, row.input])
+
+
+@pytest.mark.parametrize("rec", [{"session": "s1", "eventid": "cowrie.command.input"},
+                                 {"ts": None, "session": "s1", "eventid": "cowrie.command.input"}])
+def test_cow160x4_line_without_timestamp_is_rejected(deid, rec):
+    """A line with no usable timestamp raises instead of being stored."""
+    line = next(_rewrite(rec))
+    with pytest.raises(ValueError):
+        normalise(json.loads(line), line, deid, SessionSecrets())
