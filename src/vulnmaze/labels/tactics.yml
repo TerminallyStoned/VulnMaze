@@ -1,0 +1,97 @@
+reference: MITRE ATT&CK Enterprise v19.2, https://attack.mitre.org/tactics/enterprise/
+tactic_ids:
+  Execution: TA0002
+  Persistence: TA0003
+  Privilege Escalation: TA0004
+  Stealth: TA0005
+  Credential Access: TA0006
+  Discovery: TA0007
+  Command and Control: TA0011
+  Impact: TA0040
+  Defense Impairment: TA0112
+command_start: '(?:^|[;&|`(]|\$\()\s*(?:(?:sudo|busybox|/bin/busybox|nohup|exec|timeout\s+\d+)\s+)*'
+rules:
+  - name: destroy
+    tactic: Impact
+    techniques: [T1485, T1561, T1529, T1531, T1499]
+    pattern: '{cmd}(?:rm\s+(?:-\w+\s+)+/(?:\*|\s|$)|mkfs|dd\s+if=\S+\s+of=/dev/|shutdown|reboot|halt|poweroff|userdel)|>\s*/dev/sd[a-z]\b|:\(\)\s*\{'
+  - name: miner
+    tactic: Impact
+    techniques: [T1496]
+    pattern: 'xmrig|minerd|cpuminer|stratum\+tcp|cryptonight|nicehash|kdevtmpfsi|kinsing|c3pool|nanopool|monero'
+  - name: stop_processes
+    tactic: Impact
+    techniques: [T1489]
+    pattern: '{cmd}(?:pkill|killall|kill|service\s+\S+\s+stop|systemctl\s+(?:stop|disable))\b'
+  - name: account_change
+    tactic: Persistence
+    techniques: [T1098, T1136.001]
+    pattern: '{cmd}(?:passwd|chpasswd|usermod|useradd|adduser|chage|gpasswd)\b'
+  - name: ssh_keys
+    tactic: Persistence
+    techniques: [T1098.004]
+    pattern: 'authorized_keys'
+  - name: cron
+    tactic: Persistence
+    techniques: [T1053.003]
+    pattern: '{cmd}crontab(?!\s+-l\b)\b|/etc/cron|/var/spool/cron'
+  - name: boot_persist
+    tactic: Persistence
+    techniques: [T1037.004, T1543.002, T1546.004]
+    pattern: '{cmd}update-rc\.d|systemctl\s+enable|(?:>>?|\btee\b[^;|&]*|\bsed\s+-i[^;|&]*|\b(?:cp|mv|ln)\s[^;|&]*)\s*\S*(?:\.bashrc|\.profile\b|/etc/profile|/etc/rc\.local|/etc/init\.d/)'
+  - name: priv_esc
+    tactic: Privilege Escalation
+    techniques: [T1078, T1548.001, T1548.003]
+    pattern: '{cmd}(?:su|pkexec|doas)(?=\s|$)|chmod\s+(?:[ugoa]*\+s|[0-7]*[4-7][0-7]{3}\b)|/etc/sudoers|NOPASSWD'
+  - name: run_script
+    tactic: Execution
+    techniques: [T1059.004, T1059.006]
+    pattern: '(?:^|[;&|\s])\./\S+|\|\s*(?:ba|da|z)?sh\b|{cmd}(?:ba|da)?sh\s+\S+|{cmd}(?:perl|python[23]?|php|ruby|node)\s+-[ec]\b'
+  - name: file_permissions
+    tactic: Defense Impairment
+    techniques: [T1222.002]
+    pattern: '{cmd}(?:chown|chattr)\b'
+  - name: impair_defenses
+    tactic: Defense Impairment
+    techniques: [T1685, T1686, T1690]
+    pattern: '{cmd}(?:iptables\s+-[FX]|ufw\s+disable|setenforce\s+0)\b|unset\s+HIST|HIST(?:FILE|SIZE|FILESIZE)=|>\s*/var/log/|(?:rm|shred|truncate)\s[^;|&]*/var/log/'
+  - name: remove_traces
+    tactic: Stealth
+    techniques: [T1070.003, T1070.004, T1574.006]
+    pattern: 'history\s+-c|\bshred\b|/etc/ld\.so\.preload|{cmd}rm\s(?![^;&|]*\.ssh)'
+  - name: cred_read
+    tactic: Credential Access
+    techniques: [T1003.007, T1003.008, T1552.001, T1552.003, T1552.004]
+    pattern: '/etc/g?shadow\b|\.ssh/id_\w+|\.bash_history|\.aws/credentials|\.docker/config\.json|wallet\.dat|mimipenguin|\bgrep\b[^;|&]*\b(?:pass|pwd|secret|token)'
+  - name: download
+    tactic: Command and Control
+    techniques: [T1105]
+    pattern: '{cmd}(?:wget|curl|tftp|ftpget|lwp-download|fetch|scp|sftp)\b|\b(?:https?|ftp|tftp)://'
+  - name: recon_system
+    tactic: Discovery
+    techniques: [T1082, T1518]
+    pattern: '{cmd}(?:uname|lscpu|nproc|uptime|hostname|hostnamectl|lsb_release|dmidecode|lspci|lsblk|free|df|top|arch|getconf|mount|env|ssh\s+-V)\b|/proc/(?:cpuinfo|meminfo|version|mounts|uptime)|/etc/(?:os-release|issue|\S*-release)\b'
+  - name: recon_user
+    tactic: Discovery
+    techniques: [T1033, T1087, T1069]
+    pattern: '{cmd}(?:whoami|id|w|who|last|lastlog|groups|users)(?=\s|$|[;&|)])|/etc/(?:passwd|group)\b|sudo\s+-l\b'
+  - name: recon_network
+    tactic: Discovery
+    techniques: [T1016, T1049]
+    pattern: '{cmd}(?:ifconfig|ip\s+(?:a|addr|r|route|link)|netstat|ss|arp|route|iptables\s+-[LS])\b|/etc/(?:hosts|resolv\.conf)\b|^/ip\s'
+  - name: recon_process
+    tactic: Discovery
+    techniques: [T1057, T1007]
+    pattern: '{cmd}(?:ps|pgrep|lsof|systemctl\s+(?:status|list-units)|service\s+--status-all)\b'
+  - name: recon_files
+    tactic: Discovery
+    techniques: [T1083, T1518]
+    pattern: '{cmd}(?:find|locate|which|type|command\s+-v)\b'
+  - name: busybox_probe
+    tactic: Discovery
+    techniques: [T1082, T1497]
+    pattern: 'busybox\s+(?-i:[A-Z]{3,})\b'
+  - name: benign
+    tactic: none
+    techniques: []
+    pattern: '{cmd}(?:echo|printf|ls|cd|pwd|exit|logout|clear|true|export|sleep)\b'

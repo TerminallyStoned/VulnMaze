@@ -18,7 +18,7 @@ from vulnmaze.common.deid import Deidentifier
 # Raw fields never stored. `message` repeats the password and IP in prose;
 # dst_ip is our own sensor's address; geo fields appear in some public sets.
 DROP_FIELDS = {"src_ip", "dst_ip", "password", "message", "format", "time", "isError", "system"}
-DROP_PREFIXES = ("geo", "location")
+DROP_PREFIXES = ("geo", "location", "src_ip_geoip", "honeypot_ip_geoip")
 TEXT_FIELDS_TO_SCRUB = ("input", "url", "destfile", "filename")
 
 
@@ -83,6 +83,17 @@ def event_hash(raw_line: str) -> bytes:
     return hashlib.sha256(raw_line.strip().encode("utf-8", "replace")).digest()
 
 
+def strip_nul(value: Any) -> Any:
+    """Remove NUL characters, which PostgreSQL rejects in TEXT and JSONB, from every string in value."""
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, list):
+        return [strip_nul(v) for v in value]
+    if isinstance(value, dict):
+        return {k: strip_nul(v) for k, v in value.items()}
+    return value
+
+
 def normalise(
     event: dict[str, Any],
     raw_line: str,
@@ -90,6 +101,7 @@ def normalise(
     secrets: SessionSecrets,
     source: str = "live",
 ) -> Row:
+    event = strip_nul(event)
     eventid = event.get("eventid")
     session = event.get("session")
     if not eventid or not session:
