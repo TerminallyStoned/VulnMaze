@@ -14,7 +14,7 @@ from psycopg.rows import dict_row
 from vulnmaze.db import dsn_from_env
 
 TACTICS, SEVERITY_SPEC = (
-    yaml.safe_load(resources.files("vulnmaze.labels").joinpath(name).read_text(encoding="utf-8"))
+    yaml.safe_load(resources.files("vulnmaze.labels").joinpath("data", name).read_text(encoding="utf-8"))
     for name in ("tactics.yml", "severity.yml")
 )
 RULES = [
@@ -30,12 +30,12 @@ SCANNER_CLIENT = re.compile(r"^SSH-2\.0-(?:Go|libssh|ZGrab|Nmap|masscan|sshlib|J
 def label_command(line: str) -> tuple[str | None, int | None, list[str], bool]:
     """Label one command line with an ATT&CK tactic and an R0-R4 severity.
 
-    Tactic: every rule in tactics.yml votes for one MITRE ATT&CK v19.2 tactic
+    Tactic: every rule in data/tactics.yml votes for one MITRE ATT&CK v19.2 tactic
     or abstains, and lists the techniques it encodes. The tactic with most
     votes wins, "none" only counts when nothing else fired, and ties go to
     the earlier rule.
 
-    Severity: severity.yml holds the R0-R4 specification of Touch, Fink and
+    Severity: data/severity.yml holds the R0-R4 specification of Touch, Fink and
     Colin (CRiSIS 2024), each entry with its source in the paper or marked
     added. As in the paper, commands are placed by name: the first word of
     each command in the line, after prefixes such as sudo or busybox, with
