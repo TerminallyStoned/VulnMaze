@@ -6,6 +6,7 @@ weakening the isolation in a pull request.
 
 from __future__ import annotations
 
+import configparser
 from pathlib import Path
 
 import pytest
@@ -83,3 +84,21 @@ def test_cowrie_only_accepts_proxied_connections():
     cfg = (Path(__file__).parents[2] / "infra/honeypot/cowrie.cfg").read_text()
     assert "listen_endpoints = haproxy:tcp:2222" in cfg
     assert "hostname = svr04" not in cfg          # Cowrie's well-known default
+
+
+def _fits_human_sessions(idle, session):
+    """True when the idle and per-session limits allow a 10-minute human session and stay within HAProxy's 1 h."""
+    return 600 <= idle <= session <= 3600
+
+
+def test_cowrie_timeouts_fit_human_sessions():
+    """Cowrie's idle and per-session timeouts leave room for a human session (#41)."""
+    cfg = configparser.ConfigParser(interpolation=None)
+    cfg.read(Path(__file__).parents[2] / "infra/honeypot/cowrie.cfg")
+    assert _fits_human_sessions(cfg.getint("honeypot", "idle_timeout"), cfg.getint("honeypot", "interactive_timeout"))
+
+
+@pytest.mark.parametrize("idle,session", [(180, 300), (900, 7200), (1800, 900)])
+def test_short_or_inconsistent_timeouts_are_rejected(idle, session):
+    """Cowrie's defaults, a session cap above HAProxy's 1 h, or an idle limit above the session cap all fail."""
+    assert not _fits_human_sessions(idle, session)

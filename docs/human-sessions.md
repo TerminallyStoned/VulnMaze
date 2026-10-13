@@ -28,6 +28,7 @@ Rules:
 - **Type everything by hand.** Do not paste scripts or command lists; your typing rhythm, pauses and typos are what the classifier learns from.
 - React to what you see: if a command fails or shows something interesting, follow it.
 - Stay inside the honeypot shell. Do not scan or attack anything else.
+- The honeypot logs you out after 15 minutes without typing, and every session ends after 1 hour. If that happens, log in again and carry on.
 - Use a different goal for each session, and `exit` at the end.
 
 ### 3. Send your log
