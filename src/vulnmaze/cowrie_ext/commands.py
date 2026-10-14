@@ -12,10 +12,13 @@ what the real tools print.
 from __future__ import annotations
 
 import os
+import posixpath
 from pathlib import Path
 
+from cowrie.commands.find import Command_find as _CowrieFind
 from cowrie.commands.sudo import Command_sudo as _CowrieSudo
 from cowrie.shell.command import HoneyPotCommand
+from cowrie.shell.fs import A_CONTENTS, A_NAME, A_TYPE, T_DIR
 
 
 class _SilentSuccess(HoneyPotCommand):
@@ -95,6 +98,29 @@ class Command_sudo(_CowrieSudo):
         super().start()
 
 
+class Command_find(_CowrieFind):
+    def find_recursive(self, path: str, depth: int) -> None:
+        """Descend only into real directories, like find without -L, and list each directory once.
+
+        Cowrie's find follows symlinks while descending, so the links in its
+        filesystem that point at their own directory (/proc/1/cwd and
+        /proc/1/root) make `find /` branch exponentially and freeze every session.
+        """
+        if depth > self.maxdepth:
+            return
+        try:
+            node = self.fs.getfile(path, follow_symlinks=False)
+            if node is None:
+                return
+            if self._match(path):
+                self.write(f"{path}\n")
+            if node[A_TYPE] == T_DIR:
+                for child in node[A_CONTENTS]:
+                    self.find_recursive(posixpath.join(path, child[A_NAME]), depth + 1)
+        except Exception as e:
+            self.errorWrite(f"find: error accessing {path}: {e}\n")
+
+
 def _register() -> dict[str, type[HoneyPotCommand]]:
     table: dict[str, type[HoneyPotCommand]] = {}
     for name, cls, directory in [
@@ -107,6 +133,7 @@ def _register() -> dict[str, type[HoneyPotCommand]]:
         ("setcap", Command_setcap, "/usr/sbin"),
         ("pkexec", Command_pkexec, "/usr/bin"),
         ("sudo", Command_sudo, "/usr/bin"),
+        ("find", Command_find, "/bin"),
     ]:
         table[name] = cls
         table[f"{directory}/{name}"] = cls

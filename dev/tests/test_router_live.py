@@ -89,3 +89,21 @@ def test_deterministic_output_matches_stock_cowrie(cowrie_server, stock_cowrie_s
     stock = ssh_session(stock_cowrie_server.host, stock_cowrie_server.port, DETERMINISTIC_CMDS + ["exit"])
     for cmd, a, b in zip(DETERMINISTIC_CMDS, ours, stock, strict=False):
         assert a == b, f"output differs for {cmd!r}"
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("find / -name no_such_file_zz", []),
+    ("find /etc -name hostname", ["/etc/hostname"]),
+    ("find /proc/1 -maxdepth 3 -name root", ["/proc/1/root"]),
+])
+def test_find_lists_symlinks_without_descending_into_them(cowrie_server, command, expected):
+    """find answers within the prompt timeout and does not loop through links that point at their own parent."""
+    out = ssh_session(cowrie_server.host, cowrie_server.port, [command, "exit"])
+    assert out[0].split() == expected
+
+
+@pytest.mark.parametrize("command", ["find /no/such/dir -name x", "find /tmp/missing"])
+def test_find_on_a_missing_path_prints_nothing(cowrie_server, command):
+    """A start path that does not exist returns at once with no output, as Cowrie's own find does."""
+    out = ssh_session(cowrie_server.host, cowrie_server.port, [command, "exit"])
+    assert out[0].strip() == ""
