@@ -1,6 +1,6 @@
 import pytest
 
-from vulnmaze.classify.baselines import cross_validate, evaluate, shape
+from vulnmaze.classify.baselines import MODELS, cross_validate, evaluate, shape
 
 LINES = [
     ("uname -a", "Discovery", "R1"),
@@ -23,7 +23,7 @@ COMMANDS = [
 def test_baselines_train_on_earlier_days_and_score_the_test_day(gold):
     """Both baselines learn the training days and score every test line; hand-labelled lines are left out of training."""
     results, models = evaluate(COMMANDS, "2025-06-28", gold)
-    assert set(models) == {f"{t}_{m}" for t in ("tactic", "severity") for m in ("tfidf_similarity", "random_forest")}
+    assert set(models) == {f"{t}_{m}" for t in ("tactic", "severity") for m in MODELS}
     for task in ("tactic", "severity"):
         assert results[task]["test_lines"] == len(LINES)
         assert results[task]["train_distinct"] == len(LINES) - len(gold or {})
@@ -47,10 +47,7 @@ def test_shape_cross_validation_scores_every_shape_once(folds):
     shapes = len({shape(line) for line, _, _ in LINES})
     for task in ("tactic", "severity"):
         assert results[task]["shapes"] == shapes and results[task]["folds"] == folds
-        assert {m: results[task][m]["n"] for m in ("tfidf_similarity", "random_forest")} == {
-            "tfidf_similarity": shapes,
-            "random_forest": shapes,
-        }
+        assert {m: results[task][m]["n"] for m in MODELS} == dict.fromkeys(MODELS, shapes)
 
 
 @pytest.mark.parametrize("folds", [0, 1, 6])

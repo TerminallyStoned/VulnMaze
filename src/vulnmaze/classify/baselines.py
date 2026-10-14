@@ -30,6 +30,10 @@ MODELS = {
         TfidfVectorizer(token_pattern=TOKEN, sublinear_tf=True),
         RandomForestClassifier(n_estimators=200, random_state=29, n_jobs=-1),
     ),
+    "random_forest_chars": lambda: make_pipeline(
+        TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), sublinear_tf=True),
+        RandomForestClassifier(n_estimators=200, random_state=29, n_jobs=-1),
+    ),
 }
 TASKS = ("tactic", "severity")
 SHAPE = [
