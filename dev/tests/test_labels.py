@@ -11,7 +11,7 @@ from vulnmaze.labels.attack_rules import label_events
             "SSH-2.0-OpenSSH_9.6",
             {"s1": "llm_agent"},
             ["uname -a", "cat /proc/cpuinfo | grep name | wc -l", "df -h", "echo 'SSH check'"],
-            [("Discovery", "R1"), ("Discovery", "R0"), ("Discovery", "R1"), ("none", "R0")],
+            [("Discovery", "R1"), ("Discovery", "R1"), ("Discovery", "R1"), ("none", "R0")],
             (["Discovery"], "R1", "llm_agent"),
         ),
         (
