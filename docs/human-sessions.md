@@ -53,6 +53,11 @@ Send `human-<yourname>.json` to the person collecting them. It contains only you
    ```bash
    uv run python dev/scripts/tag_human_sessions.py cowrie.json --since 2026-10-14T10:00+08:00 --until 2026-10-14T11:30+08:00 --out tiers-me.jsonl
    ```
+   For attacker-harness runs, pass the run file with `--harness`; each run is matched to the Cowrie session that connected last before its first step (at most `--max-gap` seconds, default 30) and tagged `llm_agent`. The harness's own source port cannot be used for this behind Docker Desktop, which forwards the connection:
+   ```bash
+   docker compose -f infra/docker-compose.yml cp cowrie:/cowrie/var/log/cowrie/cowrie.json cowrie.json
+   uv run python dev/scripts/tag_human_sessions.py cowrie.json --harness dev/harness_runs/<run>.jsonl --out tiers-harness.jsonl
+   ```
 3. Pass the tier files to the labeller with `vulnmaze-label --tiers ...` (combine several files into one first). A session in a tier file is labelled with that tier; without one, every `public:*` session would be labelled `bot`.
 
 Aim for at least 10 human sessions. With fewer, train the tier classifier on bot and LLM agent only and report human detection as future work.
