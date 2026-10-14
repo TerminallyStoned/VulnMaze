@@ -59,10 +59,10 @@ class CowrieServer:
     def events(self) -> list[dict]:
         if not self.json_log.exists():
             return []
-        return [json.loads(line) for line in self.json_log.read_text().splitlines() if line.strip()]
+        return [json.loads(line) for line in self.json_log.read_text(encoding="utf-8").splitlines() if line.strip()]
 
     def lines(self) -> list[str]:
-        return [ln for ln in self.json_log.read_text().splitlines() if ln.strip()]
+        return [ln for ln in self.json_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
 
 
 @contextmanager
@@ -80,20 +80,29 @@ def run_cowrie(tap: str = "vulnmaze", hostname: str = "web-portal-01", startup_t
     for d in ("etc", "var/log/cowrie", "var/lib/cowrie/downloads", "var/lib/cowrie/tty"):
         (workdir / d).mkdir(parents=True)
     (workdir / "etc/cowrie.cfg").write_text(COWRIE_CFG.format(port=port, hostname=hostname))
-    cmd = [twistd, "--umask=0022", "-n", "--pidfile=", "-l", str(workdir / "twistd.log"), tap]
+    posix = os.name == "posix"
+    unix_only = ["--umask=0022", "--pidfile="] if posix else []
+    cmd = [twistd, *unix_only, "-n", "-l", str(workdir / "twistd.log"), tap]
     extra = dict(env or {})
-    if extra:
-        cmd = ["env", *(f"{k}={v}" for k, v in extra.items()), *cmd]
     run_as = os.environ.get("VULNMAZE_TEST_COWRIE_USER")
-    if os.geteuid() == 0:
+    if posix and os.geteuid() == 0:
         if not run_as:
             raise RuntimeError("running as root: set VULNMAZE_TEST_COWRIE_USER to an unprivileged user")
         shutil.chown(workdir, run_as)
         for p in workdir.rglob("*"):
             shutil.chown(p, run_as)
-        cmd = ["su", run_as, "-s", "/bin/sh", "-c", " ".join(shlex.quote(c) for c in cmd)]
-    proc = subprocess.Popen(cmd, cwd=workdir, start_new_session=True,
+        inner = ["env", *(f"{k}={v}" for k, v in extra.items()), *cmd]
+        cmd = ["su", run_as, "-s", "/bin/sh", "-c", " ".join(shlex.quote(c) for c in inner)]
+    proc = subprocess.Popen(cmd, cwd=workdir, start_new_session=posix, env={**os.environ, **extra},
                             stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+    def stop(force: bool = False) -> None:
+        """Stop Cowrie and anything it started: the process group on POSIX, the process on Windows."""
+        if posix:
+            os.killpg(proc.pid, signal.SIGKILL if force else signal.SIGTERM)
+        else:
+            proc.kill()
+
     deadline = time.time() + startup_timeout
     log = workdir / "twistd.log"
     while time.time() < deadline:
@@ -103,16 +112,16 @@ def run_cowrie(tap: str = "vulnmaze", hostname: str = "web-portal-01", startup_t
             raise RuntimeError(f"Cowrie exited early:\n{log.read_text() if log.exists() else ''}")
         time.sleep(0.2)
     else:
-        os.killpg(proc.pid, signal.SIGTERM)
+        stop()
         raise RuntimeError("Cowrie did not start in time")
     try:
         yield CowrieServer("127.0.0.1", port, workdir)
     finally:
-        os.killpg(proc.pid, signal.SIGTERM)
+        stop()
         try:
             proc.wait(10)
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
+            stop(force=True)
         shutil.rmtree(workdir, ignore_errors=True)
 
 
