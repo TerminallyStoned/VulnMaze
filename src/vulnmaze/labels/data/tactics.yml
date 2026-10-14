@@ -46,7 +46,7 @@ rules:
   - name: run_script
     tactic: Execution
     techniques: [T1059.004, T1059.006]
-    pattern: '(?:^|[;&|\s])\./\S+|\|\s*(?:ba|da|z)?sh\b|{cmd}(?:ba|da)?sh\s+\S+|{cmd}(?:perl|python[23]?|php|ruby|node)\s+-[ec]\b'
+    pattern: '(?:^|[;&|\s])\./\S+|\|\s*(?:ba|da|z)?sh\b|{cmd}(?:ba|da)?sh\s+\S+|{cmd}\$SHELL\s+-c\b|{cmd}(?:perl|python[23]?|php|ruby|node)\s+-[ec]\b'
   - name: file_permissions
     tactic: Defense Impairment
     techniques: [T1222.002]
@@ -58,7 +58,7 @@ rules:
   - name: remove_traces
     tactic: Stealth
     techniques: [T1070.003, T1070.004, T1574.006]
-    pattern: 'history\s+-c|\bshred\b|/etc/ld\.so\.preload|{cmd}rm\s(?![^;&|]*\.ssh)'
+    pattern: 'history\s+-c|\bshred\b|/etc/ld\.so\.preload|{cmd}rm\s[^;&|]*(?:/tmp/|/var/run/|/var/tmp/|/dev/shm/|\.sh\b|\.bash_history)'
   - name: cred_read
     tactic: Credential Access
     techniques: [T1003.007, T1003.008, T1552.001, T1552.003, T1552.004]
@@ -70,7 +70,7 @@ rules:
   - name: recon_system
     tactic: Discovery
     techniques: [T1082, T1518]
-    pattern: '{cmd}(?:uname|lscpu|nproc|uptime|hostname|hostnamectl|lsb_release|dmidecode|lspci|lsblk|free|df|top|arch|getconf|mount|env|ssh\s+-V)\b|/proc/(?:cpuinfo|meminfo|version|mounts|uptime)|/etc/(?:os-release|issue|\S*-release)\b'
+    pattern: '{cmd}(?:uname|lscpu|nproc|uptime|hostname|hostnamectl|lsb_release|dmidecode|lspci|lsblk|free|df|top|arch|getconf|mount|env|ssh\s+-V)\b|/proc/(?:\d+/)?(?:cpuinfo|meminfo|version|mounts|uptime)|/etc/(?:os-release|issue|\S*-release)\b'
   - name: recon_user
     tactic: Discovery
     techniques: [T1033, T1087, T1069]
@@ -81,12 +81,12 @@ rules:
     pattern: '{cmd}(?:ifconfig|ip\s+(?:a|addr|r|route|link)|netstat|ss|arp|route|iptables\s+-[LS])\b|/etc/(?:hosts|resolv\.conf)\b|^/ip\s'
   - name: recon_process
     tactic: Discovery
-    techniques: [T1057, T1007]
-    pattern: '{cmd}(?:ps|pgrep|lsof|systemctl\s+(?:status|list-units)|service\s+--status-all)\b'
+    techniques: [T1057, T1007, T1613]
+    pattern: '{cmd}(?:ps|pgrep|lsof|crontab\s+-l|docker\s+(?:ps|images|info|version)|systemctl\s+(?:status|list-units|is-active|is-enabled)|service\s+--status-all)\b'
   - name: recon_files
     tactic: Discovery
     techniques: [T1083, T1518]
-    pattern: '{cmd}(?:find|locate|which|type|command\s+-v)\b'
+    pattern: '{cmd}(?:find|locate|which|type|command\s+-v)\b|\.local/share/TelegramDesktop'
   - name: busybox_probe
     tactic: Discovery
     techniques: [T1082, T1497]

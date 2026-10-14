@@ -24,7 +24,7 @@ words:
   - name: added_r0
     level: 0
     source: added, R0 description (no lasting change)
-    words: echo printf exit logout clear true sleep which type
+    words: echo printf exit logout clear true sleep which type locate
   - name: added_r1
     level: 1
     source: added, R1 description (information gathering)
@@ -32,7 +32,7 @@ words:
   - name: added_r3
     level: 3
     source: added, R3 description (configuration changes)
-    words: crontab useradd adduser usermod userdel chattr systemctl service history setenforce
+    words: useradd adduser usermod userdel chattr history setenforce
 patterns:
   - name: rm_force_recursive
     level: 3
@@ -45,7 +45,7 @@ patterns:
   - name: echo_pipe
     level: 2
     source: Table 2, lf_pattern_g1_echo_pipe
-    pattern: '\becho\b[^;&|]*\|'
+    pattern: '\becho\b[^;&|]*\|(?!\|)'
   - name: echo_text_redirect
     level: 3
     source: Table 2, lf_pattern_g1_echo_text_redirect
@@ -58,6 +58,22 @@ patterns:
     level: 3
     source: added, R3 description (configuration changes)
     pattern: 'unset\s+HIST|HIST\w*='
+  - name: added_read_only_listing
+    level: 1
+    source: added, R1 description (information gathering)
+    pattern: 'crontab\s+-l|systemctl\s+(?:status|is-active|is-enabled|list-units)|docker\s+(?:ps|images|info|version)|/proc/(?:\d+/)?(?:cpuinfo|meminfo|version|mounts|uptime)'
+  - name: added_create_file
+    level: 2
+    source: added, Table 1 places touch at R2
+    pattern: '\b(?:head|printf|truncate)\b[^;&|]*>'
+  - name: added_service_or_cron_change
+    level: 3
+    source: added, R3 description (configuration changes)
+    pattern: 'crontab(?!\s+-l\b)|systemctl\s+(?:enable|disable|start|stop|restart|mask|daemon-reload)|service\s+\S+\s+(?:start|stop|restart)'
+  - name: added_run_dropped_file
+    level: 4
+    source: added, R4 description (runs a program not originally on the system)
+    pattern: '(?:^|[;&|]\s*)/(?:tmp|var/tmp|var/run|dev/shm)/[^\s;&|]+\s*(?:$|[;&|])'
   - name: long_command
     level: 4
     source: section 5.1, heuristics
