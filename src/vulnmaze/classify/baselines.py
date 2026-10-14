@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import random
 import re
+from collections import Counter
 from pathlib import Path
 
 import joblib
@@ -117,6 +119,38 @@ def evaluate(commands: list[dict], test_day: str, gold: dict[str, dict] | None =
     return results, fitted
 
 
+def cross_validate(commands: list[dict], folds: int = 5) -> dict:
+    """Score each baseline on command shapes it never saw, by cross-validation grouped by shape.
+
+    The labels are made per shape, so a shape is the unit: the shapes are
+    split into folds, each model trains on the distinct lines of the other
+    folds and is scored on the most frequent line of each held-out shape, so
+    every shape counts once however often bots send it. Raises ValueError
+    when folds is below 2 or above the number of labelled shapes.
+    """
+    results = {}
+    for task in TASKS:
+        by_shape: dict[str, list[tuple[int, str, str]]] = {}
+        for (x, y), n in Counter((c["input"], c[task]) for c in commands if c[task] is not None).items():
+            by_shape.setdefault(shape(x), []).append((n, x, y))
+        shapes = sorted(by_shape)
+        if not 2 <= folds <= len(shapes):
+            raise ValueError(f"{folds} folds for {len(shapes)} labelled {task} shapes")
+        random.Random(29).shuffle(shapes)
+        results[task] = {"shapes": len(shapes), "folds": folds}
+        for name, make in MODELS.items():
+            truth, pred = [], []
+            for k in range(folds):
+                test = set(shapes[k::folds])
+                train = [(x, y) for s in shapes if s not in test for _, x, y in by_shape[s]]
+                model = make().fit([x for x, _ in train], [y for _, y in train])
+                reps = [max(by_shape[s]) for s in sorted(test)]
+                truth += [y for _, _, y in reps]
+                pred += list(model.predict([x for _, x, _ in reps]))
+            results[task][name] = scores(truth, pred, task)
+    return results
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Train and score the tactic and severity baselines (TF-IDF similarity, random forest)."
@@ -127,6 +161,9 @@ def main() -> None:
     )
     ap.add_argument("--test-day", default="2025-07-01", help="day held out for testing; earlier days train")
     ap.add_argument("--gold", type=Path, help="hand-labelled CSV with command, tactic and severity columns")
+    ap.add_argument(
+        "--cv-folds", type=int, default=5, help="folds for cross-validation grouped by shape; 0 skips it"
+    )
     args = ap.parse_args()
     commands = [json.loads(x) for x in args.commands.read_text(encoding="utf-8").split("\n") if x.strip()]
     gold = None
@@ -134,6 +171,8 @@ def main() -> None:
         with args.gold.open(encoding="utf-8-sig", newline="") as fh:
             gold = {r["command"]: {t: (r[t] or "").strip() for t in TASKS} for r in csv.DictReader(fh)}
     results, fitted = evaluate(commands, args.test_day, gold)
+    if args.cv_folds:
+        results["shape_cv"] = cross_validate(commands, args.cv_folds)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "metrics.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
     for name, model in fitted.items():

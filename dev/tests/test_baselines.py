@@ -1,6 +1,6 @@
 import pytest
 
-from vulnmaze.classify.baselines import evaluate
+from vulnmaze.classify.baselines import cross_validate, evaluate, shape
 
 LINES = [
     ("uname -a", "Discovery", "R1"),
@@ -38,3 +38,23 @@ def test_split_without_training_or_test_lines_is_rejected(test_day):
     """A test day with no earlier labelled days, or with no labelled lines of its own, raises."""
     with pytest.raises(ValueError):
         evaluate(COMMANDS, test_day)
+
+
+@pytest.mark.parametrize("folds", [2, 5])
+def test_shape_cross_validation_scores_every_shape_once(folds):
+    """Each labelled shape is held out in exactly one fold and scored once, whatever its line count."""
+    results = cross_validate(COMMANDS, folds)
+    shapes = len({shape(line) for line, _, _ in LINES})
+    for task in ("tactic", "severity"):
+        assert results[task]["shapes"] == shapes and results[task]["folds"] == folds
+        assert {m: results[task][m]["n"] for m in ("tfidf_similarity", "random_forest")} == {
+            "tfidf_similarity": shapes,
+            "random_forest": shapes,
+        }
+
+
+@pytest.mark.parametrize("folds", [0, 1, 6])
+def test_cross_validation_needs_two_folds_and_enough_shapes(folds):
+    """Fewer than two folds, or more folds than labelled shapes, raises."""
+    with pytest.raises(ValueError):
+        cross_validate(COMMANDS, folds)
