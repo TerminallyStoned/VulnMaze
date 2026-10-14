@@ -21,13 +21,16 @@ COMMANDS = [
     [None, {"uname -a": {"tactic": "Discovery", "severity": "R1"}, "history -c": {"tactic": "Stealth", "severity": ""}}],
 )
 def test_baselines_train_on_earlier_days_and_score_the_test_day(gold):
-    """Both baselines learn the training days, score every test line, and are compared with hand labels when given."""
+    """Both baselines learn the training days and score every test line; hand-labelled lines are left out of training."""
     results, models = evaluate(COMMANDS, "2025-06-28", gold)
     assert set(models) == {f"{t}_{m}" for t in ("tactic", "severity") for m in ("tfidf_similarity", "random_forest")}
     for task in ("tactic", "severity"):
-        assert results[task]["test_lines"] == len(LINES) and results[task]["test_new_shape"] == 0
-        assert results[task]["random_forest"]["test"]["accuracy"] == 1.0
+        assert results[task]["test_lines"] == len(LINES)
+        assert results[task]["train_distinct"] == len(LINES) - len(gold or {})
+        assert results[task]["test_new_shape"] == len(gold or {})
         assert ("rules" in results[task]) == bool(gold and any(g[task] for g in gold.values()))
+    if not gold:
+        assert results["tactic"]["random_forest"]["test"]["accuracy"] == 1.0
 
 
 @pytest.mark.parametrize("test_day", ["2025-06-27", "2025-07-01"])
