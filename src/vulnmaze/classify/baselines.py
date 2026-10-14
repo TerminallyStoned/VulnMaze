@@ -77,14 +77,16 @@ def evaluate(commands: list[dict], test_day: str, gold: dict[str, dict] | None =
     (bots repeat the same lines every day and vary only passwords, keys or
     addresses, which flatters the first score) and, when gold maps
     command lines to hand labels, against those labels, where the rules are
-    scored too (a rule abstention counts as "unknown"). Returns the metrics
-    and the fitted models; raises ValueError when a split has no labelled
-    lines.
+    scored too (a rule abstention counts as "unknown"). With gold, every
+    training line that has the shape of a gold line is left out, so the
+    models are scored on lines they never saw. Returns the metrics and the
+    fitted models; raises ValueError when a split has no labelled lines.
     """
     results, fitted = {}, {}
+    held_out = {shape(x) for x in gold or {}}
     for task in TASKS:
         rows = [(c["input"], c[task], c["ts"][:10]) for c in commands if c[task] is not None]
-        train = sorted({(x, y) for x, y, day in rows if day < test_day})
+        train = sorted({(x, y) for x, y, day in rows if day < test_day and shape(x) not in held_out})
         test = [(x, y) for x, y, day in rows if day == test_day]
         if not train or not test:
             raise ValueError(f"no labelled {task} lines before or on {test_day}")
