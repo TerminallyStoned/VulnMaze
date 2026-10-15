@@ -520,8 +520,8 @@ class Gateway:
                 {"ts": ts, "input": shlex.join(req.argv)},
             ]
             p = await asyncio.to_thread(predict, self.classifiers, commands[-50:])
-            reasons.append(f"learned:{p['tier']}:{p['session_max']}:{p['session_high']}")
-            if p["tier"] == "bot" and p["session_max"] not in HIGH:
+            reasons.append(f"learned:{p['tier']}:{p['tier_p']}:{p['session_max']}:{p['session_high']}")
+            if p["tier"] == "bot" and p["tier_p"] >= 0.9 and p["session_max"] not in HIGH:
                 return finish("declined", *not_found(argv0))
 
         # 4. limits

@@ -29,7 +29,7 @@ def fit(commands: list[dict]) -> dict:
 
 
 def predict(models: dict, commands: list[dict]) -> dict:
-    """Per-command tactic and severity, running session severity and attacker tier for a digest's commands."""
+    """Per-command tactic and severity, running session severity, and attacker tier with its probability for a digest's commands."""
     rows = [c for c in commands if not c.get("realm") and (c.get("input") or "").strip()]
     if not rows:
         raise ValueError("the session has no commands")
@@ -47,11 +47,13 @@ def predict(models: dict, commands: list[dict]) -> dict:
             {"input": line, "tactic": tactic, "severity": level, "session_max": top, "session_high": high}
         )
     typed = [(datetime.fromisoformat(c["ts"]), c["input"]) for c in rows if not c.get("nested")]
-    tier = None
+    tier = tier_p = None
     if models.get("tier") and len(typed) >= 2:
         features = session_features(sorted(typed))
-        tier = models["tier"]["model"].predict([[features[f] for f in models["tier"]["features"]]])[0]
-    return {"commands": out, "session_max": top, "session_high": high, "tier": tier}
+        model = models["tier"]["model"]
+        proba = model.predict_proba([[features[f] for f in models["tier"]["features"]]])[0]
+        tier, tier_p = str(model.classes_[proba.argmax()]), round(float(proba.max()), 2)
+    return {"commands": out, "session_max": top, "session_high": high, "tier": tier, "tier_p": tier_p}
 
 
 def main() -> None:

