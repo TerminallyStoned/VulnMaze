@@ -10,6 +10,21 @@ answered by a hardened local language model: it sits on its own isolated
 network, every answer is checked against the machine persona, and answers,
 files and facts are pinned so the machine stays consistent across sessions.
 
+In `learned` mode, trained classifiers (ATT&CK tactic, R0-R4 severity and
+attacker tier: bot, human or LLM agent) decide per session who gets the
+language model, and plant tactic-matched bait files for sessions worth
+deceiving. An LLM-agent attacker harness and two scripts compare this with
+plain Cowrie (`off`) and an always-on LLM honeypot (`all`).
+
+## Documentation
+
+| Read | For |
+|---|---|
+| [How VulnMaze works](docs/how-it-works.md) | What each part does and why, the results so far, the limitations, and what goes in which section of the report |
+| [User manual](docs/user-manual.md) | Installing, configuring, choosing the mode, building the classifiers, running the evaluation, troubleshooting |
+| [Attacker harness](docs/harness.md) | Running the LLM-agent attacker and each evaluation mode in detail |
+| [Human sessions](docs/human-sessions.md) | Collecting sessions typed by people for the attacker-tier classifier |
+
 ## Features
 
 - **Isolated deployment.** A Docker Compose stack with `edge` / `dmz` /
@@ -40,6 +55,21 @@ files and facts are pinned so the machine stays consistent across sessions.
 - **Public dataset loader.** Public Cowrie datasets (for example the
   CyberLab honeynet) load through the same normalise/de-identify path as
   live data.
+- **Learned escalation.** `VULNMAZE_ESCALATION=off | all | learned`. In
+  `learned`, random-forest classifiers run on each session (about 12 ms per
+  command); a session at least 90% likely to be a bot that has done nothing
+  risky gets plain Cowrie's `command not found`, everyone else gets the
+  language model. Every decision is logged.
+- **Honeytokens.** In `learned`, humans, LLM agents and risky sessions get a
+  bait file matched to their predicted ATT&CK tactic (for example a database
+  config with a password), written by the local model, added to the running
+  session and pinned for the attacker.
+- **Persona filesystem.** The web server the persona describes (web root,
+  nginx, MariaDB and PHP configs) is added to Cowrie's filesystem in every
+  mode, so the disk agrees with the model's answers.
+- **Attacker harness and evaluation.** An LLM attacker (via OpenRouter) that
+  can only target the local honeypot, `eval_mode.py` to run one mode end to
+  end and `eval_compare.py` to compare modes in one table.
 
 ## Layout
 
@@ -51,12 +81,20 @@ src/vulnmaze/
   ingest/          tails cowrie.json, normalises and stores; public dataset loader
   digest/          per-session digest builder
   state/           write-once per-attacker state store + HTTP API
-  llm/             hardened LLM gateway: prompt, backends, output checks, pinning
+  llm/             hardened LLM gateway: prompt, backends, output checks, pinning,
+                   learned decisions and bait (/v1/assess)
+  classify/        tactic, severity and attacker-tier classifiers
+  labels/          rule-based ATT&CK and R0-R4 labeller (baseline)
+  harness/         LLM-agent attacker harness
   common/          de-identification (keyed HMAC)
   db/schema.sql    PostgreSQL schema
 src/twisted/plugins/vulnmaze_plugin.py   `twistd vulnmaze` = Cowrie + VulnMaze hooks
 infra/             docker compose stack (edge, cowrie, postgres, ingester,
-                   state-api, llm-gateway, ollama); persona/persona.yml
+                   state-api, llm-gateway, ollama); persona/persona.yml;
+                   classifiers/ (the trained model file, not in git)
+dev/scripts/       evaluation (eval_mode.py, eval_compare.py), session tagging,
+                   golden-set evaluation of the gap-filler
+docs/              the documentation listed above
 ```
 
 ## Quick start
@@ -86,9 +124,11 @@ docker compose -f infra/docker-compose.yml --profile models run --rm ollama-pull
 
 With an NVIDIA GPU, add `-f infra/docker-compose.gpu.yml` to the compose
 commands (needs the NVIDIA Container Toolkit on the host). Then set
-`VULNMAZE_ESCALATION=all` in `infra/.env` and restart the stack. Model
-choices (`VULNMAZE_LLM_BACKEND`, `VULNMAZE_LLM_URL`, `VULNMAZE_LLM_MODEL`)
-are in `infra/.env.example`.
+`VULNMAZE_ESCALATION=all` (or `learned`, which also needs the classifier
+file, see the [user manual](docs/user-manual.md#5-build-the-classifier-file))
+in `infra/.env` and restart the stack. Model choices
+(`VULNMAZE_LLM_BACKEND`, `VULNMAZE_LLM_URL`, `VULNMAZE_LLM_MODEL`) are in
+`infra/.env.example`.
 
 ### OpenRouter for development (optional, off by default)
 
@@ -187,8 +227,9 @@ After changing dependencies in `pyproject.toml`, run `uv lock` and commit
   internal network of its own, requires a token, re-checks the router
   decision on every request, and never sees privilege-boundary commands.
   The model server has no route to the internet — models are pulled once by
-  a one-off job — and no hosted model API is supported, so attacker data
-  never leaves the deployment.
+  a one-off job. A hosted model (OpenRouter) is possible only as an explicit
+  development opt-in (`infra/docker-compose.openrouter.yml`); without it,
+  attacker data never leaves the deployment.
 - Raw log retention: rotated `cowrie.json.*` files on the log volume contain
   real IPs; delete them on your chosen schedule (the ingester never needs
   them after ingestion).
