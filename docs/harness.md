@@ -120,7 +120,8 @@ Other options: `--max-steps N` (commands per session, default 12), `--model <id>
 |---|---|---|
 | `qwen/qwen3.5-9b` | 14 Oct, 30 sessions, `all` | In the tier model's training data |
 | `qwen/qwen3-coder` | 15 Oct, 30 sessions, `learned` | In the tier model's training data |
-| `google/gemini-3.6-flash` | not yet | Unseen by the tier model, so the fair test of `learned`. Needs `--reasoning`: it rejects reasoning turned off |
+| `google/gemini-3.6-flash` | 15 Oct, failed | Rejects reasoning turned off; needs `--reasoning` |
+| `z-ai/glm-5.3-flash` | not yet | Unseen by the tier model, so the fair test of `learned` |
 
 When a run uses a new model, add it to this table.
 
@@ -176,7 +177,7 @@ For each mode, in this order: `off`, `all`, `learned`.
    ```
 5. **Run 30 sessions** into the mode's folder:
    ```bash
-   uv run python -m vulnmaze.harness.runner --env-file infra/.env --sessions 6 --model google/gemini-3.6-flash --reasoning --out dev/harness_runs/eval-<mode>
+   uv run python -m vulnmaze.harness.runner --env-file infra/.env --sessions 6 --model z-ai/glm-5.3-flash --out dev/harness_runs/eval-<mode>
    ```
 6. **Check before the next mode.** A run that took under a minute failed: look at the `error` field of its first line. Then check that the run file has 30 sessions (see **How many sessions**). In `off` mode `llm_calls` gets no new rows; in `all` there are no `declined` rows; in `learned` harness sessions should not be `declined`.
 
