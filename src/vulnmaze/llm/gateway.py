@@ -34,13 +34,17 @@ import os
 import posixpath
 import re
 import secrets
+import shlex
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
+import joblib
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
 from psycopg_pool import ConnectionPool
 
+from vulnmaze.classify.session import HIGH, predict
 from vulnmaze.common.deid import Deidentifier
 from vulnmaze.db import apply_schema, dsn_from_env
 from vulnmaze.llm import sanitize
@@ -115,6 +119,7 @@ class GatewayConfig:
     warmup_timeout_s: float = 300.0
     warmup_attempts: int = 5
     escalation: bool = True
+    classifiers: str | None = None
     canary: str = field(default_factory=lambda: "ref-" + secrets.token_hex(6))
 
     @classmethod
@@ -134,6 +139,9 @@ class GatewayConfig:
             warmup_timeout_s=float(env("VULNMAZE_LLM_WARMUP_TIMEOUT_S", "300")),
             warmup_attempts=int(env("VULNMAZE_LLM_WARMUP_ATTEMPTS", "5")),
             escalation=env("VULNMAZE_ESCALATION", "off").strip().lower() != "off",
+            classifiers=env("VULNMAZE_CLASSIFIERS")
+            if env("VULNMAZE_ESCALATION", "off").strip().lower() == "learned"
+            else None,
             canary=env("VULNMAZE_LLM_CANARY") or "ref-" + secrets.token_hex(6),
         )
 
@@ -293,6 +301,14 @@ class Db:
             pinned.value if pinned else None, g.value if g else None, a.value if a else None, facts
         )
 
+    def session_commands(self, session: str) -> list[dict]:
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                "SELECT digest->'commands' FROM session_digests WHERE source = 'live' AND session = %s",
+                (session,),
+            ).fetchone()
+        return row[0] if row and row[0] else []
+
     def file_contents(self, req: EscalationRequest, paths: list[str]) -> list[CreatedFile]:
         with self.pool.connection() as conn:
             store = StateStore(conn, self.deid)
@@ -382,6 +398,7 @@ class Gateway:
         self.model_ready = not backend.needs_warmup
         self.warm_task: asyncio.Task | None = None
         self.warm_failed = False
+        self.classifiers = joblib.load(cfg.classifiers) if cfg.classifiers else None
 
     def ensure_warming(self) -> None:
         """Load the model in the background, with no deadline, unless it is loaded, loading or failed."""
@@ -491,6 +508,21 @@ class Gateway:
             p = ctx.pinned_output
             files = await self._db(self.db.file_contents, req, p.get("files", []))
             return finish("pinned", p["stdout"], p["stderr"], p["exit_code"], files)
+
+        if self.classifiers is not None:
+            commands = await self._db(self.db.session_commands, req.session)
+            ts = datetime.now(UTC).isoformat()
+            seen = [i for i, h in enumerate(req.history) if commands and h == commands[-1].get("input")]
+            lagging = req.history[seen[-1] + 1 :] if seen else req.history if not commands else []
+            commands = [
+                *commands,
+                *({"ts": ts, "input": h} for h in lagging),
+                {"ts": ts, "input": shlex.join(req.argv)},
+            ]
+            p = await asyncio.to_thread(predict, self.classifiers, commands[-50:])
+            reasons.append(f"learned:{p['tier']}:{p['session_max']}:{p['session_high']}")
+            if p["tier"] == "bot" and p["session_max"] not in HIGH:
+                return finish("declined", *not_found(argv0))
 
         # 4. limits
         if not self.model_ready:

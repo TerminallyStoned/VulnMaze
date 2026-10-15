@@ -7,7 +7,7 @@ Cowrie cannot answer and the router marked escalate_candidate.
 
 Configuration (environment variables of the Cowrie container):
 
-    VULNMAZE_ESCALATION       off (default) | all
+    VULNMAZE_ESCALATION       off (default) | all | learned
     VULNMAZE_GATEWAY_URL      http://llm-gateway:8090
     VULNMAZE_GATEWAY_TOKEN    shared secret with the gateway
     VULNMAZE_GATEWAY_TIMEOUT  seconds before the local fallback (default 17)
@@ -52,12 +52,12 @@ class Config:
 
     @property
     def enabled(self) -> bool:
-        return self.mode == "all"
+        return self.mode != "off"
 
     @classmethod
     def from_env(cls) -> Config:
         mode = os.environ.get("VULNMAZE_ESCALATION", "off").strip().lower()
-        if mode not in ("off", "all"):
+        if mode not in ("off", "all", "learned"):
             log.error("Unknown VULNMAZE_ESCALATION={m!r}; escalation disabled", m=mode)
             mode = "off"
         token = os.environ.get("VULNMAZE_GATEWAY_TOKEN", "")

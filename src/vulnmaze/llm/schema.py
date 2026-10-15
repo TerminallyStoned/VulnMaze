@@ -11,7 +11,7 @@ MAX_FILE_BYTES = 64_000
 MAX_FILES = 3
 MAX_FACTS = 5
 
-Outcome = Literal["generated", "pinned", "not_installed", "refused", "fallback"]
+Outcome = Literal["generated", "pinned", "not_installed", "refused", "fallback", "declined"]
 
 
 class EscalationRequest(BaseModel):

@@ -58,7 +58,7 @@ services:
     <<: *hardening
     environment:
       TZ: UTC
-      # Escalation: off | all. "all" sends every eligible stage to the gateway.
+      # Escalation: off | all | learned. "all" sends every eligible stage to the gateway; "learned" lets it decide per session.
       VULNMAZE_ESCALATION: ${VULNMAZE_ESCALATION:-off}
       VULNMAZE_GATEWAY_URL: http://llm-gateway:8090
       VULNMAZE_GATEWAY_TOKEN: ${VULNMAZE_GATEWAY_TOKEN:?set VULNMAZE_GATEWAY_TOKEN in infra/.env}
@@ -148,6 +148,7 @@ services:
       <<: *pipeline-env
       VULNMAZE_GATEWAY_TOKEN: ${VULNMAZE_GATEWAY_TOKEN:?set VULNMAZE_GATEWAY_TOKEN in infra/.env}
       VULNMAZE_PERSONA: /persona/persona.yml
+      VULNMAZE_CLASSIFIERS: /classifiers/session_models.joblib
       VULNMAZE_ESCALATION: ${VULNMAZE_ESCALATION:-off}
       VULNMAZE_LLM_BACKEND: ${VULNMAZE_LLM_BACKEND:-ollama}
       VULNMAZE_LLM_URL: ${VULNMAZE_LLM_URL:-http://ollama:11434}
@@ -160,6 +161,7 @@ services:
       VULNMAZE_LLM_CONCURRENCY: ${VULNMAZE_LLM_CONCURRENCY:-2}
     volumes:
       - ./persona:/persona:ro
+      - ./classifiers:/classifiers:ro
     networks: [hpgw, backend, llm]
     depends_on:
       postgres: { condition: service_healthy }
