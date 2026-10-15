@@ -11,7 +11,9 @@ MAX_FILE_BYTES = 64_000
 MAX_FILES = 3
 MAX_FACTS = 5
 
-Outcome = Literal["generated", "pinned", "not_installed", "refused", "fallback", "declined"]
+Outcome = Literal[
+    "generated", "pinned", "not_installed", "refused", "fallback", "declined", "bait", "bait_failed"
+]
 
 
 class EscalationRequest(BaseModel):
@@ -24,6 +26,15 @@ class EscalationRequest(BaseModel):
     home: str = Field(default="/root", max_length=1024)
     argv: list[str] = Field(min_length=1, max_length=256)
     stdin: str | None = Field(default=None, max_length=16_384)
+    history: list[str] = Field(default_factory=list, max_length=50)
+
+
+class AssessRequest(BaseModel):
+    """What Cowrie sends to ask whether a running session should get bait."""
+
+    session: str = Field(max_length=64)
+    src_ip: str = Field(max_length=64)
+    username: str = Field(max_length=128)
     history: list[str] = Field(default_factory=list, max_length=50)
 
 

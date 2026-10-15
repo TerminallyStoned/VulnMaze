@@ -20,6 +20,7 @@ class Persona:
     arch: str
     role: str
     facts: dict[str, str] = field(default_factory=dict)
+    baits: dict[str, dict[str, str]] = field(default_factory=dict)
     installed: frozenset[str] = frozenset()
     absent: frozenset[str] = frozenset()
 
@@ -43,6 +44,10 @@ class Persona:
             arch=raw.get("arch", "x86_64"),
             role=" ".join(str(raw.get("role", "")).split()),
             facts={k: str(v) for k, v in (raw.get("facts") or {}).items()},
+            baits={
+                t: {"path": str(b["path"]), "contents": str(b["contents"])}
+                for t, b in (raw.get("baits") or {}).items()
+            },
             installed=installed,
             absent=absent,
         )
