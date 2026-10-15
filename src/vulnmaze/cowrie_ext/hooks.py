@@ -14,7 +14,9 @@ our twistd plugin (src/twisted/plugins/vulnmaze_plugin.py) calls
    cannot answer, and that the router marked escalate_candidate, runs the
    LLM command from ``escalation.py`` instead of "command not found";
 4. when escalation is on, loads the files the LLM created for this attacker
-   in earlier sessions into the new session's filesystem.
+   in earlier sessions into the new session's filesystem;
+5. adds the persona's directories and files (``filesystem:`` in
+   persona.yml) to Cowrie's shared filesystem, in every mode.
 
 If anything in our code raises, the original Cowrie behaviour runs and the
 error is logged: the hooks must never break an attacker's session.
@@ -37,6 +39,29 @@ BIN_DIRS = ("/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/lo
 
 _installed = False
 _original_get_command = None
+
+
+def add_files(tree, files: dict[str, str]) -> None:
+    """Add directories (paths ending in /) and files to a Cowrie filesystem tree, keeping every entry already there and dating new ones like their parent."""
+    from cowrie.shell.fs import A_CONTENTS, A_CTIME, A_NAME, T_DIR, T_FILE
+
+    for path, content in files.items():
+        parts = [p for p in path.split("/") if p]
+        node = tree
+        for i, part in enumerate(parts):
+            if not isinstance(node[A_CONTENTS], list):
+                break
+            child = next((c for c in node[A_CONTENTS] if c[A_NAME] == part), None)
+            if child is None:
+                data = content.encode()
+                is_file = i == len(parts) - 1 and not path.endswith("/")
+                child = (
+                    [part, T_FILE, 0, 0, len(data), 0o100644, node[A_CTIME], data, None, None]
+                    if is_file
+                    else [part, T_DIR, 0, 0, 4096, 0o40755, node[A_CTIME], [], None, None]
+                )
+                node[A_CONTENTS].append(child)
+            node = child
 
 
 def may_escalate(decision: Decision) -> bool:
@@ -163,6 +188,15 @@ def install() -> None:
 
         HoneyPotBaseProtocol.getCommand = getCommand
         escalation.install_session_files_hook()
+
+    try:
+        from cowrie.shell import honeyfs
+
+        from vulnmaze.llm.persona import Persona
+
+        add_files(honeyfs.get_tree(), Persona.from_env().filesystem)
+    except Exception:
+        log.failure("could not add the persona's files to Cowrie's filesystem")
 
     _installed = True
     log.info(

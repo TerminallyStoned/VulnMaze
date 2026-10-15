@@ -1591,6 +1591,7 @@ source = { editable = "." }
 [package.optional-dependencies]
 honeypot = [
     { name = "cowrie" },
+    { name = "pyyaml" },
 ]
 ml = [
     { name = "scikit-learn" },
@@ -1621,6 +1622,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'pipeline'", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'pipeline'", specifier = ">=0.27" },
     { name = "psycopg", extras = ["binary", "pool"], marker = "extra == 'pipeline'", specifier = ">=3.2" },
+    { name = "pyyaml", marker = "extra == 'honeypot'", specifier = ">=6" },
     { name = "pyyaml", marker = "extra == 'pipeline'", specifier = ">=6" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.5" },
     { name = "uvicorn", marker = "extra == 'pipeline'", specifier = ">=0.30" },

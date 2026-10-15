@@ -63,8 +63,10 @@ services:
       VULNMAZE_GATEWAY_URL: http://llm-gateway:8090
       VULNMAZE_GATEWAY_TOKEN: ${VULNMAZE_GATEWAY_TOKEN:?set VULNMAZE_GATEWAY_TOKEN in infra/.env}
       VULNMAZE_GATEWAY_TIMEOUT: ${VULNMAZE_GATEWAY_TIMEOUT:-17}
+      VULNMAZE_PERSONA: /persona/persona.yml
     volumes:
       - ./honeypot/cowrie.cfg:/cowrie/etc/cowrie.cfg:ro
+      - ./persona:/persona:ro
       - cowrie-logs:/cowrie/var/log/cowrie
       - cowrie-state:/cowrie/var/lib/cowrie
     tmpfs: [/tmp]

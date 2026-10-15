@@ -22,6 +22,7 @@ class Persona:
     facts: dict[str, str] = field(default_factory=dict)
     installed: frozenset[str] = frozenset()
     absent: frozenset[str] = frozenset()
+    filesystem: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: str | Path) -> Persona:
@@ -45,6 +46,7 @@ class Persona:
             facts={k: str(v) for k, v in (raw.get("facts") or {}).items()},
             installed=installed,
             absent=absent,
+            filesystem={str(k): str(v or "") for k, v in (raw.get("filesystem") or {}).items()},
         )
 
     @classmethod
