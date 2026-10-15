@@ -69,6 +69,7 @@ def test_valid_step_drives_command(monkeypatch, command, done):
     assert record["command"] == command
     assert record["tier"] == "llm_agent"
     assert record["output_len"] == len("uid=0(root)\n")
+    assert (record["prompt_tokens"], record["completion_tokens"]) == (11, 7)
     assert summary["steps"] == 1
 
 

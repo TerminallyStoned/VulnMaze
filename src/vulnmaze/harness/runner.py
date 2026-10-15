@@ -145,6 +145,8 @@ def run_session(
                     "output_len": len(output),
                     "duration_ms": elapsed_ms,
                     "done": step.done,
+                    "prompt_tokens": attacker.prompt_tokens,
+                    "completion_tokens": attacker.completion_tokens,
                     "tier": TIER,
                     "ts": datetime.now(UTC).isoformat(),
                 },
