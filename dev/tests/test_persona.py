@@ -1,13 +1,19 @@
 import configparser
+import copy
+import pickle
 from pathlib import Path
 
+import cowrie
 import pytest
+from cowrie.shell import honeyfs
 
+from vulnmaze.cowrie_ext.hooks import add_files
 from vulnmaze.llm.persona import Persona
 from vulnmaze.llm.pinning import PersonaChecker, fact_contradictions
 from vulnmaze.router.known_commands import KNOWN_COMMANDS
 
 ROOT = Path(__file__).resolve().parents[2]
+STOCK = pickle.loads((Path(cowrie.__file__).parent / "data/fs.pickle").read_bytes())
 
 
 def test_persona_matches_cowrie_config(persona):
@@ -66,3 +72,22 @@ def test_declared_and_stored_fact_contradictions(persona):
     """Declared facts must agree with the persona and with facts already pinned."""
     assert PersonaChecker(persona).check_declared({"php_version": "7.4.0"}) == ["contradicts_persona:php_version=7.4.0"]
     assert fact_contradictions({"db": "a", "new": "x"}, {"db": "b"}) == ["contradicts_fact:db"]
+
+
+def test_persona_filesystem_gives_cowrie_the_web_server_it_describes(persona):
+    """On Cowrie's stock filesystem the persona adds its web root and server configs, keeps every stock entry, and leaves the bait paths free."""
+    tree = copy.deepcopy(STOCK)
+    add_files(tree, persona.filesystem)
+    web_root = honeyfs._find(tree, persona.facts["web_root"])
+    assert web_root[1] == 1 and web_root[6] == honeyfs._find(STOCK, "/var")[6]
+    assert b"root /var/www/portal/public;" in honeyfs._find(tree, "/etc/nginx/sites-enabled/portal")[7]
+    assert honeyfs._find(tree, "/etc/passwd")[7] == honeyfs._find(STOCK, "/etc/passwd")[7]
+    assert honeyfs._find(tree, "/var/www/portal/config/database.php") is None
+
+
+@pytest.mark.parametrize("files", [{"/etc/passwd": "x"}, {"/etc/passwd/x": "y"}, {}])
+def test_persona_filesystem_never_replaces_or_breaks_stock_entries(files):
+    """An existing file is not overwritten, a path below a file is skipped, and nothing is added for an empty list."""
+    tree = copy.deepcopy(STOCK)
+    add_files(tree, files)
+    assert tree == STOCK

@@ -111,3 +111,102 @@ commands:
     - ruby
     - socat
     - ncat
+
+# Directories (ending in /) and files Cowrie adds to its filesystem at
+# startup, so the machine described above exists on disk in every mode.
+# Bait paths (baits:) are left out: they appear only when planted.
+filesystem:
+  /var/www/portal/config/: ""
+  /var/www/portal/storage/logs/: ""
+  /var/www/portal/public/index.php: |
+    <?php
+    declare(strict_types=1);
+
+    require __DIR__ . '/../vendor/autoload.php';
+    $app = require __DIR__ . '/../bootstrap/app.php';
+    $app->run();
+  /var/www/portal/config/app.php: |
+    <?php
+    return [
+        'name' => 'e-Services Portal',
+        'env' => 'production',
+        'debug' => false,
+        'url' => 'https://eservices.portal.local',
+        'timezone' => 'Asia/Singapore',
+    ];
+  /etc/nginx/nginx.conf: |
+    user www-data;
+    worker_processes auto;
+    pid /run/nginx.pid;
+    include /etc/nginx/modules-enabled/*.conf;
+
+    events {
+        worker_connections 768;
+    }
+
+    http {
+        sendfile on;
+        tcp_nopush on;
+        types_hash_max_size 2048;
+        server_tokens off;
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        access_log /var/log/nginx/access.log;
+        error_log /var/log/nginx/error.log;
+        gzip on;
+        include /etc/nginx/conf.d/*.conf;
+        include /etc/nginx/sites-enabled/*;
+    }
+  /etc/nginx/sites-enabled/portal: |
+    server {
+        listen 80;
+        server_name eservices.portal.local;
+        root /var/www/portal/public;
+        index index.php;
+
+        location / {
+            try_files $uri $uri/ /index.php?$query_string;
+        }
+
+        location ~ \.php$ {
+            include snippets/fastcgi-php.conf;
+            fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+        }
+
+        location ~ /\.(?!well-known) {
+            deny all;
+        }
+    }
+  /etc/mysql/my.cnf: |
+    [client-server]
+    socket = /run/mysqld/mysqld.sock
+
+    !includedir /etc/mysql/conf.d/
+    !includedir /etc/mysql/mariadb.conf.d/
+  /etc/mysql/mariadb.conf.d/50-server.cnf: |
+    [mysqld]
+    user = mysql
+    pid-file = /run/mysqld/mysqld.pid
+    basedir = /usr
+    datadir = /var/lib/mysql
+    tmpdir = /tmp
+    bind-address = 127.0.0.1
+    log_error = /var/log/mysql/error.log
+    character-set-server = utf8mb4
+    collation-server = utf8mb4_general_ci
+  /etc/php/8.2/fpm/pool.d/www.conf: |
+    [www]
+    user = www-data
+    group = www-data
+    listen = /run/php/php8.2-fpm.sock
+    listen.owner = www-data
+    listen.group = www-data
+    pm = dynamic
+    pm.max_children = 10
+    pm.start_servers = 2
+    pm.min_spare_servers = 1
+    pm.max_spare_servers = 3
+  /var/lib/mysql/portal/: ""
+  /var/log/nginx/access.log: ""
+  /var/log/nginx/error.log: ""
