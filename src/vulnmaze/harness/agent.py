@@ -82,6 +82,7 @@ class Attacker:
     max_tokens: int = 512
     timeout: float = 60.0
     reasoning: bool = False
+    reasoning_tokens: int = 1536
     prompt_tokens: int = 0
     completion_tokens: int = 0
 
@@ -100,7 +101,7 @@ class Attacker:
             "model": self.model,
             "messages": self._messages,
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
+            "max_tokens": self.max_tokens + (self.reasoning_tokens if self.reasoning else 0),
             "reasoning": {"effort": "low"} if self.reasoning else {"enabled": False},
             "response_format": {
                 "type": "json_schema",
@@ -124,6 +125,8 @@ class Attacker:
         usage = data.get("usage") or {}
         self.prompt_tokens += usage.get("prompt_tokens") or 0
         self.completion_tokens += usage.get("completion_tokens") or 0
+        if data["choices"][0].get("finish_reason") == "length":
+            raise AgentError(f"reply cut off at the {body['max_tokens']}-token limit")
         step = parse_step(text)
         self._messages.append({"role": "assistant", "content": text})
         return step
