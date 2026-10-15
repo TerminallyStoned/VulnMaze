@@ -12,7 +12,9 @@ Configuration (environment variables of the Cowrie container):
     VULNMAZE_GATEWAY_TOKEN    shared secret with the gateway
     VULNMAZE_GATEWAY_TIMEOUT  seconds before the local fallback (default 17)
 
-"all" means every eligible stage is escalated.
+"all" means every eligible stage is escalated. "learned" lets the gateway
+decide per session, and asks it after the 3rd typed command and every 5th
+after that whether the session gets bait files (`assess`).
 
 The call is asynchronous (Twisted + treq, as Cowrie's own curl does), so a
 slow model never blocks other attackers' sessions.
@@ -32,6 +34,7 @@ from twisted.logger import Logger
 log = Logger(namespace="vulnmaze.escalation")
 
 LLM_EVENT = "cowrie.vulnmaze.llm"
+BAIT_EVENT = "cowrie.vulnmaze.bait"
 BIN_DIRS = {"/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/local/sbin"}
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
 MAX_STDIN = 16_000
@@ -210,6 +213,45 @@ def make_command(name: str):
     return Command_vulnmaze_llm
 
 
+def assess(protocol) -> None:
+    """Count a typed line and, at the 3rd and every 5th after, ask the gateway in the background for bait files to add."""
+    if CONFIG.mode != "learned":
+        return
+    protocol._vulnmaze_typed = n = getattr(protocol, "_vulnmaze_typed", 0) + 1
+    if (n < 3 or (n - 3) % 5) or getattr(protocol, "_vulnmaze_assessing", False):
+        return
+    session, src_ip = _identity(protocol)
+    user = protocol.user
+    history = [
+        h.decode("utf-8", "replace") if isinstance(h, bytes) else str(h)
+        for h in getattr(protocol, "historyLines", [])[-HISTORY:]
+    ]
+
+    def load(files):
+        uid, gid = getattr(user, "uid", 0), getattr(user, "gid", 0)
+        paths = [
+            f["path"] for f in files or [] if materialise(protocol.fs, f["path"], f["content"], uid, gid)
+        ]
+        if paths:
+            protocol.events.dispatch(BAIT_EVENT, "Bait planted at %(paths)s", paths=paths)
+
+    try:
+        d = treq.post(
+            f"{CONFIG.url}/v1/assess",
+            json={"session": session, "src_ip": src_ip, "username": user.username, "history": history},
+            timeout=CONFIG.timeout,
+            headers={"Authorization": f"Bearer {CONFIG.token}"},
+        )
+    except Exception:
+        log.failure("could not request bait")
+        return
+    protocol._vulnmaze_assessing = True
+    d.addCallback(lambda r: treq.json_content(r) if r.code == 200 else [])
+    d.addCallback(load)
+    d.addErrback(lambda failure: log.info("bait unavailable: {e}", e=failure.value))
+    d.addBoth(lambda _: setattr(protocol, "_vulnmaze_assessing", False))
+
+
 def install_session_files_hook() -> None:
     """When a session starts, fetch the files the LLM created for this
     attacker earlier and add them to the session's filesystem, so an
@@ -275,7 +317,10 @@ def install_session_files_hook() -> None:
         if getattr(protocol, "_vulnmaze_files_pending", False):
             protocol._vulnmaze_held.append((self, line))
             return None
-        return original_line(self, line)
+        result = original_line(self, line)
+        if line.strip():
+            assess(protocol)
+        return result
 
     def eofReceived(self):  # noqa: N802 (Cowrie's name)
         # A client that closes stdin straight after an exec request (common
