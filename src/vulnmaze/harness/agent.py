@@ -81,6 +81,7 @@ class Attacker:
     temperature: float = 0.3
     max_tokens: int = 512
     timeout: float = 60.0
+    reasoning: bool = False
     prompt_tokens: int = 0
     completion_tokens: int = 0
 
@@ -100,7 +101,7 @@ class Attacker:
             "messages": self._messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
-            "reasoning": {"enabled": False},
+            "reasoning": {"effort": "low"} if self.reasoning else {"enabled": False},
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "attacker_step", "schema": STEP_SCHEMA},
@@ -116,6 +117,8 @@ class Attacker:
                 r.raise_for_status()
                 data = r.json()
             text = data["choices"][0]["message"]["content"] or ""
+        except httpx.HTTPStatusError as exc:
+            raise AgentError(f"HTTP {exc.response.status_code}: {exc.response.text[:300]}") from exc
         except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
             raise AgentError(f"{type(exc).__name__}: {exc}") from exc
         usage = data.get("usage") or {}
