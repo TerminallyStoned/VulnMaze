@@ -36,6 +36,7 @@ import re
 import secrets
 import shlex
 import time
+from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -58,6 +59,7 @@ from vulnmaze.llm.schema import (
     MAX_FILES,
     MAX_STDOUT,
     MODEL_OUTPUT_SCHEMA,
+    AssessRequest,
     CreatedFile,
     EscalationRequest,
     ShellResult,
@@ -363,6 +365,16 @@ class Db:
             }
             return store.create_if_absent(req.src_ip, req.username, out_key, value, created_by).value
 
+    def baited(self, req: EscalationRequest, tactic: str) -> bool:
+        with self.pool.connection() as conn:
+            return StateStore(conn, self.deid).get(req.src_ip, req.username, f"bait:{tactic}") is not None
+
+    def mark_bait(self, req: EscalationRequest, tactic: str, path: str) -> None:
+        with self.pool.connection() as conn:
+            StateStore(conn, self.deid).create_if_absent(
+                req.src_ip, req.username, f"bait:{tactic}", path, "honeytoken"
+            )
+
     def session_files(self, src_ip: str, username: str) -> list[CreatedFile]:
         with self.pool.connection() as conn:
             facts = StateStore(conn, self.deid).list(src_ip, username, "file:")
@@ -510,16 +522,7 @@ class Gateway:
             return finish("pinned", p["stdout"], p["stderr"], p["exit_code"], files)
 
         if self.classifiers is not None:
-            commands = await self._db(self.db.session_commands, req.session)
-            ts = datetime.now(UTC).isoformat()
-            seen = [i for i, h in enumerate(req.history) if commands and h == commands[-1].get("input")]
-            lagging = req.history[seen[-1] + 1 :] if seen else req.history if not commands else []
-            commands = [
-                *commands,
-                *({"ts": ts, "input": h} for h in lagging),
-                {"ts": ts, "input": shlex.join(req.argv)},
-            ]
-            p = await asyncio.to_thread(predict, self.classifiers, commands[-50:])
+            p = await self._predict(req.session, req.history, [shlex.join(req.argv)])
             reasons.append(f"learned:{p['tier']}:{p['tier_p']}:{p['session_max']}:{p['session_high']}")
             if p["tier"] == "bot" and p["tier_p"] >= 0.9 and p["session_max"] not in HIGH:
                 return finish("declined", *not_found(argv0))
@@ -558,6 +561,71 @@ class Gateway:
         value = await self._db(self.db.commit, req, out_key, accepted, self.backend.name)
         files = await self._db(self.db.file_contents, req, value.get("files", []))
         return finish("generated", value["stdout"], value["stderr"], value["exit_code"], files)
+
+    async def _predict(self, session: str, history: list[str], current: list[str]) -> dict:
+        """Classifier predictions on the session's digest commands, the history lines it has not caught up with, and current."""
+        commands = await self._db(self.db.session_commands, session)
+        ts = datetime.now(UTC).isoformat()
+        seen = [i for i, h in enumerate(history) if commands and h == commands[-1].get("input")]
+        lagging = history[seen[-1] + 1 :] if seen else history if not commands else []
+        commands = [*commands, *({"ts": ts, "input": h} for h in [*lagging, *current])]
+        return await asyncio.to_thread(predict, self.classifiers, commands[-50:])
+
+    async def assess(self, req: AssessRequest) -> list[CreatedFile]:
+        """Plant the persona's bait for the session's main tactic, once per attacker, when learned mode judges the session worth deceiving."""
+        t0 = time.perf_counter()
+        if self.classifiers is None or not self.model_ready:
+            return []
+        try:
+            p = await self._predict(req.session, req.history, [])
+        except ValueError:
+            return []
+        tactics = Counter(c["tactic"] for c in p["commands"] if c["tactic"] in self.persona.baits)
+        if (p["tier"] not in ("human", "llm_agent") and p["session_max"] not in HIGH) or not tactics:
+            return []
+        tactic = tactics.most_common(1)[0][0]
+        bait = self.persona.baits[tactic]
+        er = EscalationRequest(
+            session=req.session,
+            src_ip=req.src_ip,
+            username=req.username,
+            argv=["cat", bait["path"]],
+            history=req.history,
+        )
+        if await self._db(self.db.baited, er, tactic) or not await self.concurrency.acquire(
+            self.cfg.busy_wait_s
+        ):
+            return []
+        reasons = [
+            f"learned:{p['tier']}:{p['tier_p']}:{p['session_max']}:{p['session_high']}",
+            f"bait:{tactic}",
+        ]
+        stats = {
+            "attempts": 0,
+            "model_ms": 0,
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "rejected_output": None,
+        }
+        try:
+            ctx = await self._db(self.db.load, er, "cat", output_key(er))
+            ctx.facts[f"contents of {bait['path']}"] = bait["contents"]
+            accepted = await self._generate(er, ctx, True, t0 + self.cfg.deadline_s, reasons, stats)
+        finally:
+            self.concurrency.release()
+        files = []
+        if accepted is not None and accepted.stdout.strip():
+            accepted.files = [(bait["path"], accepted.stdout)]
+            await self._db(self.db.commit, er, output_key(er), accepted, "honeytoken")
+            await self._db(self.db.mark_bait, er, tactic, bait["path"])
+            files = [CreatedFile(path=bait["path"], content=accepted.stdout)]
+        outcome = "bait" if files else "bait_failed"
+        await self._log(
+            er,
+            ShellResult(outcome=outcome, reasons=reasons, latency_ms=int((time.perf_counter() - t0) * 1000)),
+            stats,
+        )
+        return files
 
     async def _generate(
         self, req, ctx: Context, installed: bool, deadline: float, reasons: list[str], stats: dict
@@ -711,6 +779,12 @@ async def healthz(response: Response) -> dict:
 async def escalate(req: EscalationRequest) -> ShellResult:
     assert _gateway is not None
     return await _gateway.escalate(req)
+
+
+@app.post("/v1/assess", dependencies=[Depends(require_token)], response_model=list[CreatedFile])
+async def assess(req: AssessRequest) -> list[CreatedFile]:
+    assert _gateway is not None
+    return await _gateway.assess(req)
 
 
 @app.get("/v1/session-files", dependencies=[Depends(require_token)], response_model=list[CreatedFile])

@@ -33,6 +33,26 @@ facts:
   web_root: /var/www/portal
   services_running: nginx, php8.2-fpm, mariadb, ssh, cron, rsyslog
 
+# Honeytokens for learned mode: one bait file per predicted ATT&CK tactic,
+# planted once per attacker in a session worth deceiving. `contents` tells
+# the model what the file holds; every value in it is fake.
+baits:
+  Discovery:
+    path: /var/www/portal/config/database.php
+    contents: the portal's PHP database settings as define() lines, with host localhost, database portal, user portal_app and its password
+  Privilege Escalation:
+    path: /root/.my.cnf
+    contents: a MariaDB client config with a [client] section for user root and its password
+  Persistence:
+    path: /etc/cron.d/portal-backup
+    contents: a cron entry that runs /usr/local/sbin/portal-backup.sh as root at 02:30 every night and copies the dump to backup host 10.20.4.40 with rsync
+  Command and Control:
+    path: /usr/local/sbin/portal-update.sh
+    contents: a bash script that downloads the latest portal release from the internal mirror 10.20.4.30 with curl and an access token, unpacks it into /var/www/portal and restarts php8.2-fpm
+  Exfiltration:
+    path: /var/backups/portal/portal-db.sql
+    contents: the first lines of a mysqldump of the portal database, with the CREATE TABLE and first INSERT rows of the users table (usernames, e-mail addresses and bcrypt password hashes)
+
 # Command existence. `installed` commands are answered by the LLM (if Cowrie
 # does not already implement them). `absent` commands always get bash's
 # "command not found", with no model call. Anything in neither list is

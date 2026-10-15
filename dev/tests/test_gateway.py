@@ -9,7 +9,7 @@ from vulnmaze.classify.tier import FEATURES
 from vulnmaze.llm import sanitize
 from vulnmaze.llm.backends import ModelError, ModelReply
 from vulnmaze.llm.gateway import HINTS, Context, Gateway, GatewayConfig, parse_reply
-from vulnmaze.llm.schema import CreatedFile, EscalationRequest
+from vulnmaze.llm.schema import AssessRequest, CreatedFile, EscalationRequest
 
 
 class FakeDb:
@@ -24,6 +24,7 @@ class FakeDb:
         self.commits = []
         self.logged = []
         self.commands = commands or []
+        self.baits = []
 
     def load(self, req, name, out_key):
         """Return the stored context for this request."""
@@ -50,6 +51,14 @@ class FakeDb:
         """Record an accepted answer and return it as stored."""
         self.commits.append(c)
         return {"stdout": c.stdout, "stderr": c.stderr, "exit_code": c.exit_code, "files": [p for p, _ in c.files]}
+
+    def baited(self, req, tactic):
+        """Whether this attacker already got bait for tactic."""
+        return any(t == tactic for t, _ in self.baits)
+
+    def mark_bait(self, req, tactic, path):
+        """Record planted bait."""
+        self.baits.append((tactic, path))
 
     def log_call(self, row):
         """Record an llm_calls row."""
@@ -404,3 +413,43 @@ def test_learned_mode_declines_low_severity_bots_like_plain_cowrie(persona, deid
     result, db = learned_run(persona, deid, "bot", commands, backend, history)
     assert result.outcome == "declined" and result.stderr == "-bash: lsblk: command not found\n"
     assert backend.calls == 0 and db.pins == [] and db.commits == []
+
+
+def assess_run(persona, deid, tier, commands, backend, learned=True):
+    """Assess session s1 twice through a gateway whose tier model always answers tier, in learned mode or not."""
+    db = FakeDb(deid, commands=commands)
+    gw = Gateway(GatewayConfig(token="t" * 16, canary="ref-canary"), db, backend, persona)
+    if learned:
+        gw.classifiers = {**CLASSIFIERS, "tier": {"features": list(FEATURES), "model": DummyClassifier(strategy="prior").fit([[0] * len(FEATURES)], [tier])}}
+    req = AssessRequest(session="s1", src_ip="198.51.100.9", username="root", history=[c["input"] for c in commands])
+    return [asyncio.run(gw.assess(req)) for _ in range(2)], db
+
+
+@pytest.mark.parametrize("tier, commands", [("llm_agent", LOW), ("human", LOW), ("bot", HIGH_RISK)])
+def test_assess_plants_the_tactic_bait_once_per_attacker(persona, deid, tier, commands):
+    """Agents, humans and risky bots get the bait of their main tactic, pinned once as a honeytoken; a second assess plants nothing."""
+    path = persona.baits["Discovery"]["path"]
+    content = "<?php\ndefine('DB_PASSWORD', 'Portal#2024');\n"
+    backend = FakeBackend(answer(content))
+    (first, second), db = assess_run(persona, deid, tier, commands, backend)
+    assert first == [CreatedFile(path=path, content=content)] and second == []
+    assert backend.calls == 1 and db.baits == [("Discovery", path)] and db.commits[0].files == [(path, first[0].content)]
+    assert db.logged[0]["outcome"] == "bait" and "bait:Discovery" in db.logged[0]["reasons"]
+    assert not any(sanitize.denylisted_path(b["path"], "/root", "/root") for b in persona.baits.values())
+
+
+@pytest.mark.parametrize(
+    "tier, commands, learned, replies, logged",
+    [
+        ("bot", LOW, True, [], []),
+        ("llm_agent", LOW, False, [], []),
+        ("llm_agent", [{"ts": "2025-07-01T00:00:00+00:00", "input": "history -c"}, {"ts": "2025-07-01T00:00:01+00:00", "input": "history -c"}], True, [], []),
+        ("llm_agent", LOW, True, [answer("As an AI language model I cannot"), answer("I am an AI"), answer("As an AI"), answer("I am an AI")], ["bait_failed", "bait_failed"]),
+    ],
+)
+def test_assess_plants_nothing_for_bots_other_modes_unbaited_tactics_or_rejected_output(persona, deid, tier, commands, learned, replies, logged):
+    """Confident low-severity bots, off/all mode, tactics without bait and rejected model output get no bait and no pin."""
+    backend = FakeBackend(*replies)
+    (first, second), db = assess_run(persona, deid, tier, commands, backend, learned)
+    assert first == second == [] and db.baits == [] and db.commits == []
+    assert [r["outcome"] for r in db.logged] == logged
