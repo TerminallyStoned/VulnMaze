@@ -158,6 +158,27 @@ docker compose -f infra/docker-compose.yml down
 
 Compare the modes with the same attacker model and the same number of sessions. Do the three modes one after another, each with its own folder for the run file: the run file does not record the mode, the folder does.
 
+### With the script
+
+`dev/scripts/eval_mode.py` does all the steps below for one mode. Give it the mode. The attacker model is `OPENROUTER_MODEL` in `infra/.env`, so set it there once:
+```bash
+uv run python dev/scripts/eval_mode.py off
+uv run python dev/scripts/eval_mode.py all
+uv run python dev/scripts/eval_mode.py learned
+```
+For each mode it restarts the stack in that mode (no need to edit `infra/.env`), checks the mode in both containers, waits until the honeypot's model has loaded (`all` and `learned`), clears `attacker_facts`, runs 30 sessions of up to 30 commands into `dev/harness_runs/eval-<model>-<mode>` (for example `eval-google-gemini-3.6-flash-all`), and prints a summary with warnings. It stops with a message if a check fails, and refuses to run into a folder that already has a run.
+
+| Option | Default |
+|---|---|
+| `--model <id>` | `OPENROUTER_MODEL` in `infra/.env` |
+| `--reasoning` / `--no-reasoning` | on (Gemini needs it) |
+| `--sessions N` | 6 per objective (30 in all) |
+| `--max-steps N` | 30 |
+| `--no-gpu` | uses `infra/docker-compose.gpu.yml` |
+| `--dry-run` | print the commands and stop |
+
+### By hand
+
 For each mode, in this order: `off`, `all`, `learned`.
 
 1. **Set the mode.** In `infra/.env`, set `VULNMAZE_ESCALATION=<mode>`. Clear any shell value (PowerShell: `Remove-Item Env:VULNMAZE_ESCALATION -ErrorAction SilentlyContinue`; Git Bash: `unset VULNMAZE_ESCALATION`).
