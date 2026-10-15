@@ -40,6 +40,7 @@ vulnmaze-load-public = "vulnmaze.ingest.public:main"
 vulnmaze-label = "vulnmaze.labels.attack_rules:main"
 vulnmaze-train-baselines = "vulnmaze.classify.baselines:main"
 vulnmaze-train-tier = "vulnmaze.classify.tier:main"
+vulnmaze-session-models = "vulnmaze.classify.session:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

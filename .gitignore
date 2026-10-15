@@ -19,3 +19,4 @@ dropin.cache
 # local-only material: private notes, roadmap, harness and ML scratch
 /local/
 dev/harness_runs/
+infra/classifiers/
