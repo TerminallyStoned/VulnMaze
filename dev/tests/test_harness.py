@@ -153,13 +153,23 @@ def _openrouter(monkeypatch, status, payload):
 STEP = {"command": "id", "intent": "probe", "tactic": "TA0007", "technique": "T1082", "done": False}
 
 
-@pytest.mark.parametrize("reasoning, sent", [(False, {"enabled": False}), (True, {"effort": "low"})])
-def test_attacker_turns_reasoning_off_unless_asked(monkeypatch, reasoning, sent):
-    """Reasoning is off by default and on at low effort with --reasoning, for models that cannot turn it off."""
+@pytest.mark.parametrize("reasoning, sent, limit", [(False, {"enabled": False}, 512), (True, {"effort": "low"}, 2048)])
+def test_attacker_turns_reasoning_off_unless_asked(monkeypatch, reasoning, sent, limit):
+    """Reasoning is off by default and on at low effort with --reasoning, for models that cannot turn it off, with room for it in the reply limit."""
     bodies = _openrouter(monkeypatch, 200, {"choices": [{"message": {"content": json.dumps(STEP)}}]})
     attacker = Attacker("https://openrouter.ai/api/v1", "k", "m", OBJECTIVES["discovery"], reasoning=reasoning)
     assert attacker.next_step(None).command == "id"
-    assert bodies[0]["reasoning"] == sent
+    assert bodies[0]["reasoning"] == sent and bodies[0]["max_tokens"] == limit
+
+
+@pytest.mark.parametrize("reasoning, limit", [(False, 512), (True, 2048)])
+def test_reply_cut_off_at_the_limit_raises_saying_so(monkeypatch, reasoning, limit):
+    """A reply the provider ended at the token limit raises AgentError naming the limit, not a JSON error."""
+    content = json.dumps(STEP)[:20]
+    _openrouter(monkeypatch, 200, {"choices": [{"message": {"content": content}, "finish_reason": "length"}]})
+    attacker = Attacker("https://openrouter.ai/api/v1", "k", "m", OBJECTIVES["discovery"], reasoning=reasoning)
+    with pytest.raises(AgentError, match=f"cut off at the {limit}-token limit"):
+        attacker.next_step(None)
 
 
 @pytest.mark.parametrize(
