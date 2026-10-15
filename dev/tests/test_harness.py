@@ -3,10 +3,11 @@ from __future__ import annotations
 import io
 import json
 
+import httpx
 import pytest
 
-from vulnmaze.harness import runner
-from vulnmaze.harness.agent import AgentError, AgentStep, parse_step
+from vulnmaze.harness import agent, runner
+from vulnmaze.harness.agent import AgentError, AgentStep, Attacker, parse_step
 from vulnmaze.harness.objectives import OBJECTIVES, load_objectives
 from vulnmaze.harness.runner import ContainmentError, check_target, run_session
 
@@ -124,3 +125,49 @@ def test_invalid_input_rejected(kind, payload):
     else:
         with pytest.raises(ContainmentError):
             check_target(*payload)
+
+
+def _openrouter(monkeypatch, status, payload):
+    """Answer every chat completion with status and payload, keeping the request bodies sent."""
+    bodies = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, url, json, headers):
+            bodies.append(json)
+            return httpx.Response(status, json=payload, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(agent.httpx, "Client", Client)
+    return bodies
+
+
+STEP = {"command": "id", "intent": "probe", "tactic": "TA0007", "technique": "T1082", "done": False}
+
+
+@pytest.mark.parametrize("reasoning, sent", [(False, {"enabled": False}), (True, {"effort": "low"})])
+def test_attacker_turns_reasoning_off_unless_asked(monkeypatch, reasoning, sent):
+    """Reasoning is off by default and on at low effort with --reasoning, for models that cannot turn it off."""
+    bodies = _openrouter(monkeypatch, 200, {"choices": [{"message": {"content": json.dumps(STEP)}}]})
+    attacker = Attacker("https://openrouter.ai/api/v1", "k", "m", OBJECTIVES["discovery"], reasoning=reasoning)
+    assert attacker.next_step(None).command == "id"
+    assert bodies[0]["reasoning"] == sent
+
+
+@pytest.mark.parametrize(
+    "status, message",
+    [(400, "Reasoning is mandatory for this endpoint and cannot be disabled."), (404, "No endpoints found")],
+)
+def test_rejected_request_raises_with_the_providers_message(monkeypatch, status, message):
+    """A rejected request raises AgentError carrying the status and the provider's explanation."""
+    _openrouter(monkeypatch, status, {"error": {"message": message, "code": status}})
+    attacker = Attacker("https://openrouter.ai/api/v1", "k", "m", OBJECTIVES["discovery"])
+    with pytest.raises(AgentError, match=f"HTTP {status}: .*{message}"):
+        attacker.next_step(None)

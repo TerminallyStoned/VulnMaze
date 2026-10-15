@@ -177,6 +177,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-steps", type=int, default=12)
     parser.add_argument("--read-timeout", type=float, default=8.0)
     parser.add_argument("--model-timeout", type=float, default=60.0)
+    parser.add_argument(
+        "--reasoning",
+        action="store_true",
+        help="keep reasoning on at low effort, for models that cannot turn it off",
+    )
     parser.add_argument("--api-url", default="https://openrouter.ai/api/v1")
     parser.add_argument("--env-file", type=Path, default=Path("infra/.env"))
     parser.add_argument("--out", type=Path, default=Path("dev/harness_runs"))
@@ -212,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
                         model=model,
                         objective=objective,
                         timeout=args.model_timeout,
+                        reasoning=args.reasoning,
                     )
                     summary = run_session(
                         objective,
