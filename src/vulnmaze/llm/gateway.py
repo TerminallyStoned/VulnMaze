@@ -64,14 +64,12 @@ from vulnmaze.llm.schema import (
     EscalationRequest,
     ShellResult,
 )
-from vulnmaze.router import classify_argv
+from vulnmaze.router import classify_argv, program_name
 from vulnmaze.router.router import Route
 from vulnmaze.state.store import StateStore
 
 log = logging.getLogger("vulnmaze.llm")
 
-BIN_DIRS = {"/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/local/sbin"}
-COMMAND_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
 CORRECTION = "Your previous answer was not accepted. Answer again, following every rule above exactly."
 HINTS = {
     "invalid_output:not_json": "Answer with one JSON object that has the listed fields and nothing else.",
@@ -451,13 +449,6 @@ class Gateway:
 
     # -- helpers --------------------------------------------------------------
 
-    def _command_name(self, argv0: str) -> str | None:
-        if "/" in argv0:
-            if posixpath.dirname(posixpath.normpath(argv0)) not in BIN_DIRS:
-                return None
-            argv0 = posixpath.basename(argv0)
-        return argv0 if COMMAND_NAME.match(argv0) else None
-
     async def _db(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
@@ -499,7 +490,7 @@ class Gateway:
         if decision.route is not Route.ESCALATE_CANDIDATE:
             reasons.append(f"route:{decision.route.value}:{decision.reason}")
             return finish("refused", *not_found(argv0))
-        name = self._command_name(argv0)
+        name = program_name(argv0)
         if name is None:
             reasons.append("bad_command_name")
             return finish("refused", *not_found(argv0))

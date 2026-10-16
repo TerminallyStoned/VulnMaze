@@ -4,6 +4,7 @@ from .router import (
     classify_argv,
     classify_line,
     is_sensitive_path,
+    program_name,
     split_pipeline,
     strictest,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "classify_argv",
     "classify_line",
     "is_sensitive_path",
+    "program_name",
     "split_pipeline",
     "strictest",
 ]
