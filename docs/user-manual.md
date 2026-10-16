@@ -121,7 +121,9 @@ The evaluation runs the same attacker against `off`, `all` and `learned` and com
    ```bash
    uv run python dev/scripts/eval_mode.py learned
    ```
-   Gemini needs its reasoning on, which is the default; for a model that does not, add `--no-reasoning`.
+   Gemini needs its reasoning on, which is the default; for a model that does not, add `--no-reasoning`. Without an NVIDIA GPU, add `--no-gpu` (the script uses `infra/docker-compose.gpu.yml` by default, which fails without the NVIDIA Container Toolkit).
+
+   To measure bait delivery (`docs/how-it-works.md` section 8), add `--fresh-attacker` so every session counts as a new attacker, and run `learned` once with `--no-bait-prepare` (bait written on demand) and once without (bait prepared in advance), each into its own folder with `--runs`.
 3. Compare the three runs in one table:
    ```bash
    uv run python dev/scripts/eval_compare.py dev/harness_runs/eval-google-gemini-3.6-flash-off dev/harness_runs/eval-google-gemini-3.6-flash-all dev/harness_runs/eval-google-gemini-3.6-flash-learned
