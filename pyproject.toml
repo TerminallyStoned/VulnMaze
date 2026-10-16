@@ -12,7 +12,7 @@ dependencies = []
 [project.optional-dependencies]
 # Installed in the honeypot image only.
 honeypot = ["cowrie==3.1.2", "pyyaml>=6"]
-# Installed in the pipeline image (ingester, digest builder, state API, LLM gateway).
+# Installed in the pipeline image (ingester, digest builder, LLM gateway).
 pipeline = [
   "psycopg[binary,pool]>=3.2",
   "fastapi>=0.115",

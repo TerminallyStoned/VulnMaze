@@ -42,7 +42,7 @@ def test_honeypot_reaches_gateway_api():
     assert exec_py("cowrie", PROBE, "llm-gateway", "8090") == "OPEN"
 
 
-@pytest.mark.parametrize("target", [("ollama", "11434"), ("postgres", "5432"), ("state-api", "8081")])
+@pytest.mark.parametrize("target", [("ollama", "11434"), ("postgres", "5432")])
 def test_honeypot_cannot_reach_model_or_database(target):
     assert exec_py("cowrie", PROBE, *target).startswith("BLOCKED")
 

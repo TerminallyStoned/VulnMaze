@@ -52,7 +52,7 @@ def test_edge_is_the_only_service_on_the_outside_network(compose):
     assert on_edge == ["edge"]
 
 
-@pytest.mark.parametrize("name", ["cowrie", "edge", "ingester", "state-api", "llm-gateway", "ollama"])
+@pytest.mark.parametrize("name", ["cowrie", "edge", "ingester", "llm-gateway", "ollama"])
 def test_hardening(compose, name):
     svc = compose["services"][name]
     assert svc.get("read_only") is True
@@ -76,7 +76,7 @@ def test_harness_only_reaches_dmz(compose):
 
 def test_secrets_are_required_not_defaulted(compose):
     text = COMPOSE.read_text()
-    for var in ("POSTGRES_PASSWORD", "VULNMAZE_DEID_KEY", "VULNMAZE_STATE_TOKEN", "VULNMAZE_GATEWAY_TOKEN"):
+    for var in ("POSTGRES_PASSWORD", "VULNMAZE_DEID_KEY", "VULNMAZE_GATEWAY_TOKEN"):
         assert f"${{{var}:?" in text, f"{var} must fail if unset"
 
 
