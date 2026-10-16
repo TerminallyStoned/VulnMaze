@@ -66,10 +66,10 @@
 - {id: trap06, cat: trap, cmd: [lsblk, --nonsense]}
 - {id: trap07, cat: trap, cmd: [mysql, portal, -e, "select * from table_that_does_not_exist"]}
 - {id: trap08, cat: trap, cmd: [mysql, nosuchdb_zz]}
-- {id: trap09, cat: trap, cmd: [mysql, -u, root, -pwrong_password_123]}
+- {id: trap09, cat: trap, cmd: [mysql, -u, portal_app, -pwrong_password_123]}
 - {id: trap10, cat: trap, cmd: [mysqldump, nosuchdb_zz]}
 - {id: trap11, cat: trap, cmd: [nginx, -t, -c, /nonexistent/nginx.conf]}
-- {id: trap12, cat: trap, cmd: [openssl, no-such-subcommand]}
+- {id: trap12, cat: trap, cmd: [openssl, s_client, -no-such-flag]}
 - {id: trap13, cat: trap, cmd: [rsync, -a, /nonexistent/, /tmp/x/]}
 - {id: trap14, cat: trap, cmd: [zip, /tmp/a.zip, /does/not/exist]}
 - {id: trap15, cat: trap, cmd: [dpkg, -L, no-such-package-zz]}
