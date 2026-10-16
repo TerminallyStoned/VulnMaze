@@ -27,7 +27,7 @@ Generate each secret with `python -c "import secrets; print(secrets.token_hex(32
 
 | Setting in `infra/.env` | Meaning |
 |---|---|
-| `POSTGRES_PASSWORD`, `VULNMAZE_STATE_TOKEN`, `VULNMAZE_GATEWAY_TOKEN` | Secrets between the containers |
+| `POSTGRES_PASSWORD`, `VULNMAZE_GATEWAY_TOKEN` | Secrets between the containers |
 | `VULNMAZE_DEID_KEY` | Key that replaces IP addresses and passwords with pseudonyms before storage. Keep it secret and the same on every deployment |
 | `SSH_PUBLISH` | Where the honeypot listens. Keep `127.0.0.1:2222` (only your own computer) unless you deploy a public sensor |
 | `VULNMAZE_ESCALATION` | `off`, `all` or `learned` (section 4) |

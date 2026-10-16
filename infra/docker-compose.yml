@@ -7,7 +7,7 @@
 #                             │ HTTP :8090 only             │ read-only mount
 #   hpgw (internal) ──────── llm-gateway                    │
 #                             │                             │
-#   backend (internal) ───── llm-gateway ── postgres ── ingester ── state-api
+#   backend (internal) ───── llm-gateway ── postgres ── ingester
 #   llm (internal) ───────── llm-gateway ── ollama
 #
 #   egress (normal, profile "models" only) ── ollama-pull  (downloads models, then exits)
@@ -121,23 +121,6 @@ services:
       interval: 10s
       retries: 3
       start_period: 30s
-
-  state-api:
-    build:
-      context: ..
-      dockerfile: infra/pipeline/Dockerfile
-    <<: *hardening
-    command: ["uvicorn", "vulnmaze.state.api:app", "--host", "0.0.0.0", "--port", "8081"]
-    environment:
-      <<: *pipeline-env
-      VULNMAZE_STATE_TOKEN: ${VULNMAZE_STATE_TOKEN:?set VULNMAZE_STATE_TOKEN in infra/.env}
-    networks: [backend]
-    depends_on:
-      postgres: { condition: service_healthy }
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=2)"]
-      interval: 10s
-      retries: 5
 
   # LLM gap-filler. The only service the honeypot can talk to.
   llm-gateway:

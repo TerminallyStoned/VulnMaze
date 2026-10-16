@@ -80,7 +80,7 @@ src/vulnmaze/
                    async LLM command, session files
   ingest/          tails cowrie.json, normalises and stores; public dataset loader
   digest/          per-session digest builder
-  state/           write-once per-attacker state store + HTTP API
+  state/           write-once per-attacker state store
   llm/             hardened LLM gateway: prompt, backends, output checks, pinning,
                    learned decisions and bait (/v1/assess)
   classify/        tactic, severity and attacker-tier classifiers
@@ -90,7 +90,7 @@ src/vulnmaze/
   db/schema.sql    PostgreSQL schema
 src/twisted/plugins/vulnmaze_plugin.py   `twistd vulnmaze` = Cowrie + VulnMaze hooks
 infra/             docker compose stack (edge, cowrie, postgres, ingester,
-                   state-api, llm-gateway, ollama); persona/persona.yml;
+                   llm-gateway, ollama); persona/persona.yml;
                    classifiers/ (the trained model file, not in git)
 dev/scripts/       evaluation (eval_mode.py, eval_compare.py), session tagging,
                    golden-set evaluation of the gap-filler
@@ -221,8 +221,6 @@ After changing dependencies in `pyproject.toml`, run `uv lock` and commit
 - The honeypot container shares no network with the database. It writes JSON
   logs to a volume; the ingester on the internal `backend` network mounts it
   read-only.
-- The state API is reachable only from the internal `backend` network and
-  requires a bearer token.
 - The LLM gateway is the only new neighbour of the honeypot: it sits on an
   internal network of its own, requires a token, re-checks the router
   decision on every request, and never sees privilege-boundary commands.
