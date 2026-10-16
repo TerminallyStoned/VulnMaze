@@ -191,7 +191,7 @@ def _extract_json(text: str) -> dict:
 
 
 def parse_reply(text: str, mode: str) -> tuple[Candidate, bool]:
-    """Returns (candidate, reasoning_was_stripped). Raises Rejected."""
+    """Returns (candidate, reasoning_was_stripped); an answer that says "command not found" or exits 127 counts as not installed. Raises Rejected."""
     text, stripped = sanitize.strip_reasoning(text)
     if mode == "raw":
         out = sanitize.unwrap_fence(text)
@@ -207,10 +207,14 @@ def parse_reply(text: str, mode: str) -> tuple[Candidate, bool]:
         raise sanitize.Rejected("invalid_output:bad_fields") from None
     if not 0 <= exit_code <= 255:
         raise sanitize.Rejected("invalid_output:exit_code")
+    stdout, stderr = str(data.get("stdout") or ""), str(data.get("stderr") or "")
+    written_missing = exit_code == 127 or bool(
+        re.search(r"command not found\s*$", (stdout + "\n" + stderr).strip())
+    )
     return Candidate(
-        exists=bool(data.get("command_exists", True)),
-        stdout=str(data.get("stdout") or ""),
-        stderr=str(data.get("stderr") or ""),
+        exists=bool(data.get("command_exists", True)) and not written_missing,
+        stdout=stdout,
+        stderr=stderr,
         exit_code=exit_code,
         files=files,
         facts=facts,
