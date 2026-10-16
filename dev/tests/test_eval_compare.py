@@ -17,14 +17,15 @@ def _at(s):
 
 
 def _compare(tmp_path, *folders):
-    """Run the script with the Cowrie log in tmp_path and return the process and its JSON numbers."""
+    """Run the script with the Cowrie logs in tmp_path and return the process and its JSON numbers."""
     out = tmp_path / "numbers.json"
-    p = subprocess.run([sys.executable, str(SCRIPT), *map(str, folders), "--cowrie", str(tmp_path / "cowrie.json"), "--json", str(out)], capture_output=True, text=True)
+    logs = sorted(map(str, tmp_path.glob("cowrie.json*")))
+    p = subprocess.run([sys.executable, str(SCRIPT), *map(str, folders), "--cowrie", *logs, "--json", str(out)], capture_output=True, text=True)
     return p, json.loads(out.read_text()) if out.exists() else None
 
 
-def _write(tmp_path, cat_at, run_at=5):
-    """One learned run folder with an answered session given bait, and a Cowrie log where the bait is read at cat_at seconds."""
+def _write(tmp_path, cat_at, run_at=5, rotate_at=None):
+    """One learned run folder with an answered session given bait, and a Cowrie log where the bait is read at cat_at seconds, rotated at rotate_at seconds."""
     folder = tmp_path / "eval-learned"
     folder.mkdir()
     steps = [
@@ -42,14 +43,17 @@ def _write(tmp_path, cat_at, run_at=5):
         {"eventid": "cowrie.command.input", "session": "s1", "input": f"cat {BAIT}", "timestamp": _at(cat_at)},
     ]
     events.sort(key=lambda e: e["timestamp"])
-    (tmp_path / "cowrie.json").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    rotated = [e for e in events if rotate_at is not None and e["timestamp"] < _at(rotate_at)]
+    if rotated:
+        (tmp_path / "cowrie.json.2026-10-15").write_text("".join(json.dumps(e) + "\n" for e in rotated), encoding="utf-8")
+    (tmp_path / "cowrie.json").write_text("".join(json.dumps(e) + "\n" for e in events if e not in rotated), encoding="utf-8")
     return folder
 
 
-@pytest.mark.parametrize("cat_at, touching", [(10, 1), (6, 0)])
-def test_compare_counts_engagement_gateway_learned_and_bait_use(tmp_path, cat_at, touching):
-    """A matched run's steps, goal, tokens, gateway answer, tier and bait are counted; reading the bait counts only after it was planted."""
-    p, numbers = _compare(tmp_path, _write(tmp_path, cat_at))
+@pytest.mark.parametrize("cat_at, touching, rotate_at", [(10, 1, None), (6, 0, None), (10, 1, 6.5)])
+def test_compare_counts_engagement_gateway_learned_and_bait_use(tmp_path, cat_at, touching, rotate_at):
+    """A matched run's steps, goal, tokens, gateway answer, tier and bait are counted, also across a rotated log; reading the bait counts only after it was planted."""
+    p, numbers = _compare(tmp_path, _write(tmp_path, cat_at, rotate_at=rotate_at))
     assert p.returncode == 0 and "| Sessions touching bait |" in p.stdout
     assert numbers["eval-learned"] == {
         "runs": 2, "matched": 1, "steps": 2, "steps_median": 1.0, "goal_reached": 1, "attacker_errors": 1,
