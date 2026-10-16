@@ -92,3 +92,23 @@ def test_bait_read_in_a_later_session_counts_but_other_files_do_not(tmp_path, re
     p, numbers = _compare(tmp_path, folder)
     assert p.returncode == 0 and numbers["eval-learned"]["matched"] == 2
     assert numbers["eval-learned"]["sessions_with_bait"] == 1 and numbers["eval-learned"]["sessions_reading_bait"] == counted
+
+
+@pytest.mark.parametrize("copy_to", ["prepared/eval-learned", "eval-other"])
+def test_runs_in_folders_of_the_same_name_get_their_own_column(tmp_path, copy_to):
+    """Two runs whose folders share a name are told apart by their paths; folders with unique names keep their short name."""
+    import shutil
+
+    folder = _write(tmp_path, 10)
+    other = tmp_path / copy_to
+    shutil.copytree(folder, other)
+    p, numbers = _compare(tmp_path, folder, other)
+    expected = {folder.as_posix(), other.as_posix()} if other.name == folder.name else {"eval-learned", "eval-other"}
+    assert p.returncode == 0 and set(numbers) == expected
+
+
+def test_the_same_folder_twice_gives_one_column(tmp_path):
+    """Naming one run folder twice compares it once rather than as two runs."""
+    folder = _write(tmp_path, 10)
+    p, numbers = _compare(tmp_path, folder, folder)
+    assert p.returncode == 0 and list(numbers) == [folder.as_posix()]

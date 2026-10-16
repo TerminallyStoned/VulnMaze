@@ -104,7 +104,10 @@ def main() -> None:
     for session_events in events.values():
         session_events.sort(key=lambda e: e.get("timestamp", ""))
     sessions = connected_sessions([str(log) for log in logs])
-    results = {f.name: compare(f, events, sessions) for f in args.folders}
+    names = [f.name for f in args.folders]
+    results = {
+        (f.name if names.count(f.name) == 1 else f.as_posix()): compare(f, events, sessions) for f in args.folders
+    }
     rows = [
         ("Sessions (matched to Cowrie)", lambda r: f"{r['runs']} ({r['matched']})"),
         ("Attacker steps (median per session)", lambda r: f"{r['steps']} ({r['steps_median']})"),
