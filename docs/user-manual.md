@@ -46,7 +46,7 @@ Start everything (the first build takes a few minutes):
 ```bash
 docker compose -f infra/docker-compose.yml up -d --build --wait
 ```
-Log in as an attacker would, with any password except `root` and `123456`:
+Log in as an attacker would, with any password except `root`, `123456` or one containing `honeypot` (Cowrie rejects those):
 ```bash
 ssh -p 2222 root@127.0.0.1
 ```

@@ -17,7 +17,7 @@ The mode decides what the honeypot does with a command that Cowrie cannot answer
 |---|---|
 | `off` | Plain Cowrie: `-bash: <command>: command not found`. No LLM. |
 | `all` | Every such command is answered by the local LLM. |
-| `learned` | The classifiers look at the session first. A bot doing nothing risky gets `command not found` (like `off`); everyone else gets the LLM (like `all`). |
+| `learned` | The classifiers look at the session first. A session at least 90% likely to be a bot that has done nothing risky gets `command not found` (like `off`); everyone else gets the LLM (like `all`), and humans, LLM agents and risky sessions also get a bait file. |
 
 ### Where the mode is set
 
@@ -119,8 +119,8 @@ Other options: `--max-steps N` (commands per session, default 12), `--model <id>
 | Model | Used | Notes |
 |---|---|---|
 | `qwen/qwen3.5-9b` | 14 Oct, 30 sessions, `all` | In the tier model's training data |
-| `qwen/qwen3-coder` | 15 Oct, 30 sessions, `learned` | In the tier model's training data |
-| `google/gemini-3.6-flash` | not yet | Unseen by the tier model, so the fair test of `learned`. Needs `--reasoning`: it rejects reasoning turned off |
+| `qwen/qwen3-coder` | 15 Oct, 30 sessions, `learned`; then 30 each in `off`, `all`, `learned` (first comparison) | In the tier model's training data |
+| `google/gemini-3.6-flash` | 15 and 16 Oct, 30 each in `off`, `all`, `learned` (final comparison) | Unseen by the tier model. Needs `--reasoning`: it rejects reasoning turned off |
 
 When a run uses a new model, add it to this table.
 
