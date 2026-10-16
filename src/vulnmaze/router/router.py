@@ -34,7 +34,14 @@ from enum import StrEnum
 from fnmatch import fnmatchcase
 
 from .known_commands import KNOWN_COMMANDS
-from .rules import PRIVILEGE_COMMANDS, SENSITIVE_PATHS, SENSITIVE_SEGMENTS, SHELL_BUILTINS
+from .rules import (
+    BIN_DIRS,
+    PRIVILEGE_COMMANDS,
+    PROGRAM_NAME,
+    SENSITIVE_PATHS,
+    SENSITIVE_SEGMENTS,
+    SHELL_BUILTINS,
+)
 
 
 class Route(StrEnum):
@@ -82,6 +89,15 @@ _WRAPPERS = {
     "setsid",
     "xargs",
 }
+
+
+def program_name(cmd: str) -> str | None:
+    """The name a command may reach the LLM as: a bare program name, or one in a standard bin directory; else None."""
+    if "/" in cmd:
+        if posixpath.dirname(posixpath.normpath(cmd)) not in BIN_DIRS:
+            return None
+        cmd = posixpath.basename(cmd)
+    return cmd if PROGRAM_NAME.match(cmd) else None
 
 
 def _default_is_known(cmd: str) -> bool:

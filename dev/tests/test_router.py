@@ -12,6 +12,7 @@ from vulnmaze.router import (
     classify_argv,
     classify_line,
     is_sensitive_path,
+    program_name,
     split_pipeline,
     strictest,
 )
@@ -134,3 +135,15 @@ def test_offline_line_without_privilege():
 def test_split_pipeline():
     """Pipelines split on | and |& and drop empty stages."""
     assert split_pipeline(["cat", "x", "|", "grep", "y", "|&", "wc"]) == [["cat", "x"], ["grep", "y"], ["wc"]]
+
+
+@pytest.mark.parametrize("cmd, name", [("uname", "uname"), ("/usr/bin/uname", "uname"), ("/usr/local/sbin/php-fpm8.2", "php-fpm8.2")])
+def test_program_name_accepts_bare_names_and_standard_bin_paths(cmd, name):
+    """A bare program name, or one in a standard bin directory, may reach the LLM under its plain name."""
+    assert program_name(cmd) == name
+
+
+@pytest.mark.parametrize("cmd", ["./x", "/tmp/x", "/usr/bin/../../tmp/x", "-rf", "a" * 65, ""])
+def test_program_name_refuses_the_attackers_own_files_and_odd_names(cmd):
+    """Files outside the bin directories and names that are not program names never reach the LLM."""
+    assert program_name(cmd) is None

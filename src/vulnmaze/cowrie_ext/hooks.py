@@ -29,13 +29,13 @@ import time
 
 from twisted.logger import Logger
 
-from vulnmaze.router import Decision, Route, classify_argv, split_pipeline
+from vulnmaze.router import Decision, Route, classify_argv, program_name, split_pipeline
 from vulnmaze.router.router import _ASSIGNMENT
+from vulnmaze.router.rules import BIN_DIRS
 
 log = Logger(namespace="vulnmaze")
 
 ROUTE_EVENT = "cowrie.vulnmaze.route"
-BIN_DIRS = ("/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/local/sbin")
 
 _installed = False
 _original_get_command = None
@@ -178,7 +178,7 @@ def install() -> None:
                 if (
                     getattr(self, "_vulnmaze_escalatable", None)
                     and self._vulnmaze_escalatable.get(cmd)
-                    and escalation.escalatable_name(cmd)
+                    and program_name(cmd) is not None
                 ):
                     return escalation.make_command(cmd)
             except Exception:

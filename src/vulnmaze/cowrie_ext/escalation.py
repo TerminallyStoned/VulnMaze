@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import os
 import posixpath
-import re
 import time
 from dataclasses import dataclass
 
@@ -35,8 +34,6 @@ log = Logger(namespace="vulnmaze.escalation")
 
 LLM_EVENT = "cowrie.vulnmaze.llm"
 BAIT_EVENT = "cowrie.vulnmaze.bait"
-BIN_DIRS = {"/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/local/sbin"}
-_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
 MAX_STDIN = 16_000
 HISTORY = 15
 SESSION_FILES_TIMEOUT = float(os.environ.get("VULNMAZE_SESSION_FILES_TIMEOUT", "2"))
@@ -76,16 +73,6 @@ class Config:
 
 
 CONFIG = Config.from_env()
-
-
-def escalatable_name(cmd: str) -> bool:
-    """Bare program names, or absolute paths in the standard bin directories.
-    `./x` or `/tmp/x` are the attacker's own files: never the model's to invent."""
-    if "/" in cmd:
-        return posixpath.dirname(posixpath.normpath(cmd)) in BIN_DIRS and bool(
-            _NAME.match(posixpath.basename(cmd))
-        )
-    return bool(_NAME.match(cmd))
 
 
 def _identity(protocol) -> tuple[str, str]:

@@ -6,6 +6,13 @@ security floor in a pull request without reading the matcher code.
 
 from __future__ import annotations
 
+import re
+
+BIN_DIRS: frozenset[str] = frozenset(
+    {"/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/local/sbin"}
+)
+PROGRAM_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
+
 # Commands that cross a privilege or identity boundary. These are always
 # answered by a fixed handler and must never reach the LLM gap-filler.
 PRIVILEGE_COMMANDS: frozenset[str] = frozenset(
