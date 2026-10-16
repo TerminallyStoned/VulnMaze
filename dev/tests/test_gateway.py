@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import UTC, datetime
 
 import pytest
 from sklearn.dummy import DummyClassifier
@@ -425,6 +426,7 @@ def assess_run(persona, deid, tier, commands, backend, learned=True):
     """Assess session s1 twice through a gateway whose tier model always answers tier, in learned mode or not."""
     gw, db = learned_gateway(persona, deid, tier, commands, backend)
     gw.classifiers = gw.classifiers if learned else None
+    gw.ensure_baits = lambda: None
     req = AssessRequest(session="s1", src_ip="198.51.100.9", username="root", history=[c["input"] for c in commands])
     return [asyncio.run(gw.assess(req)) for _ in range(2)], db
 
@@ -505,3 +507,30 @@ def test_output_that_only_mentions_command_not_found_is_kept(persona, deid, argv
     """Output where command not found is not the program's own last word, with an exit code other than 127, stays a normal answer."""
     result, db = run(persona, deid, argv, FakeBackend(reply))
     assert result.outcome == "generated" and len(db.commits) == 1
+
+
+def test_prepared_bait_is_planted_at_once_without_a_model_call(persona, deid):
+    """Each tactic's bait is written once for the day; a qualifying session then gets it with no model call, as a honeytoken."""
+    content = "<?php\ndefine('DB_PASS', 'k3d9');\n"
+    backend = FakeBackend(*[answer(content)] * len(persona.baits))
+    gw, db = learned_gateway(persona, deid, "llm_agent", LOW, backend)
+    today = datetime.now(UTC).date().isoformat()
+    asyncio.run(gw._prepare_baits(today))
+    assert set(gw.baits) == set(persona.baits) and [r["outcome"] for r in db.logged] == ["bait_prepared"] * len(persona.baits)
+    files = asyncio.run(gw.assess(AssessRequest(session="s1", src_ip="198.51.100.9", username="root", history=["uname -a"] * 2)))
+    path = persona.baits["Discovery"]["path"]
+    assert files == [CreatedFile(path=path, content=content)] and backend.calls == len(persona.baits)
+    assert db.commits[-1].files == [(path, content)] and f"bait_prepared:{today}" in db.logged[-1]["reasons"]
+
+
+def test_unprepared_bait_is_written_on_demand(persona, deid):
+    """When the day's bait was rejected while preparing, nothing is kept and a qualifying session gets bait written on demand."""
+    leak = answer("As an AI language model I cannot")
+    written = "define('DB_PASS', 'z1');\n"
+    backend = FakeBackend(*[leak] * (2 * len(persona.baits)), answer(written))
+    gw, db = learned_gateway(persona, deid, "llm_agent", LOW, backend)
+    asyncio.run(gw._prepare_baits(datetime.now(UTC).date().isoformat()))
+    assert gw.baits == {} and [r["outcome"] for r in db.logged] == ["bait_failed"] * len(persona.baits)
+    gw.ensure_baits = lambda: None
+    files = asyncio.run(gw.assess(AssessRequest(session="s1", src_ip="198.51.100.9", username="root", history=["uname -a"] * 2)))
+    assert [f.content for f in files] == [written] and not any(r.startswith("bait_prepared") for r in db.logged[-1]["reasons"])
