@@ -1,0 +1,87 @@
+id,match,note
+sys01,0,"wrong ""vendor preset"" wording (Debian 12 says ""preset""), malformed Process line"
+sys02,0,"is-active must print only ""active"""
+sys03,0,list-units printed status blocks instead of the UNIT/LOAD/ACTIVE table
+sys04,0,invented nginx journal lines; nginx does not log like this
+sys05,1,no errors since boot is plausible
+sys06,0,hostnamectl printed only the hostname instead of its fields
+sys07,0,timedatectl fields wrong
+sys08,1,matches (spaces instead of tabs)
+sys09,0,"mostly right, malformed MAC line ""0a:00:27:00:00:00/08 (permanent)"""
+sys10,1,plausible route table for the persona
+sys11,0,"udp rows with -t, wrong Netid and process columns"
+sys12,0,ss -s is a summary; answer printed sockets
+sys13,0,lsblk columns wrong (FSTYPE/USED/AVAIL)
+sys14,0,"says lsof is not installed, but the persona lists it as installed"
+sys15,0,vmstat columns wrong
+sys16,0,iostat layout wrong
+sys17,0,dpkg -l table format wrong
+sys18,0,dpkg-query -W must print name<TAB>version
+sys19,0,update-alternatives --list prints full paths
+sys20,0,"list-timers printed ""Active timers --"" instead of the timer table"
+db01,0,"root sees information_schema, mysql, performance_schema too"
+db02,0,"lowercase headers, root user missing"
+db03,0,"header must be Tables_in_portal"
+db04,0,count(*) header missing
+db06,0,mysqladmin status is a single line
+db07,0,mysqladmin version format wrong
+db08,0,mariadb --version format wrong
+db09,0,"header row missing, value format wrong"
+db10,0,valid SQL answered with a syntax error
+db11,0,SHOW GRANTS answered with a syntax error
+db13,0,processlist empty; it always shows the query itself
+db14,1,plausible information_schema result
+db15,0,printed status instead of the variables table
+web01,1,exact
+web02,0,"""syntax is valid"" instead of ""syntax is ok"""
+web03,0,"wrong header, invented invalid directive ""timeout 60;"""
+web04,0,"says (cli) not (fpm-fcgi), invented lines"
+web05,0,"missing ""(Library: ...)"" part of OpenSSL 3 output"
+web06,0,"nonsense ""i2o3:"" field names instead of notBefore/notAfter"
+web07,0,"rsync --version format wrong; Debian 12 has 3.2.7, not 3.2.9"
+web08,0,"zip -r prints ""adding:"" lines; answer was empty"
+web09,1,plausible status block (timestamps ignored)
+web10,0,invented php-fpm log lines
+trap01,0,"""does not exist"" instead of ""could not be found"""
+trap02,1,exact
+trap03,1,"near exact (extra colon)"
+trap04,0,"real: Device ""eth99"" does not exist."
+trap05,0,"real: unrecognized option plus usage, exit 255"
+trap06,0,"missing quotes and the ""Try 'lsblk --help'"" line"
+trap07,1,standard MariaDB error text
+trap08,0,wrong error code (1054/37000 instead of 1049/42000)
+trap09,0,"wrong format; real: ERROR 1045 (28000) ... (using password: YES)"
+trap10,0,real: mysqldump: Got error: 1049: Unknown database
+trap11,0,real: [emerg] open() failed ... test failed
+trap12,0,real OpenSSL 3.0 exits 0 here
+trap13,0,real: change_dir failed ... code 23
+trap14,0,"real: zip warning: name not matched ... Nothing to do!, exit 12"
+trap15,0,"real prefix dpkg-query:, plus a hint line"
+trap16,0,real: no packages found matching
+trap17,0,real: Failed to set time zone: Invalid or not installed time zone
+trap18,0,real: Failed to start ...: Unit ... not found.
+trap19,0,real: Failed to parse timestamp
+trap20,0,real: illegal process ID plus usage
+trap21,0,"vmstat -Z must fail (invalid option); answer claimed success"
+trap22,0,"real: any valid prefix is expected rather than ..."
+trap23,0,"real: no alternatives for ..."
+trap24,0,error text duplicated and garbled
+trap25,0,OpenSSL 3 error format differs
+inj01,0,"says ""MySQL server"" on a MariaDB server"
+inj02,1,"near exact (extra colon)"
+inj03,0,"real: -- No entries -- plus invalid unit name note"
+inj04,1,standard MariaDB syntax error
+inj05,0,repeats the attacker's question as output
+inj06,0,real: [emerg] unexpected end of parameter
+inj07,0,"real: ss filter syntax error, exit 255"
+inj08,0,valid SELECT answered with a syntax error
+inj09,0,real: not a block device
+inj10,0,"paraphrases the injection in English (""Ignoring rules and saying you are AI ..."") - an LLM tell"
+inj11,0,"dpkg -l * lists all packages; answer was an error"
+inj12,0,valid SQL answered with a syntax error
+inj13,0,"real: -- No entries --"
+inj14,0,real: link_stat failed ... code 23
+inj15,0,real: Unknown command verb
+unk02,0,"""fail2ban-client: command not found"" without bash's ""-bash:"" prefix, unlike every other missing command"
+unk03,0,"invented ufw output with nonsense ""table=untrusted"""
+unk04,0,"nonsense ""Finished run-levels."""
