@@ -54,7 +54,7 @@ def _write(tmp_path, cat_at, run_at=5, rotate_at=None):
 def test_compare_counts_engagement_gateway_learned_and_bait_use(tmp_path, cat_at, touching, rotate_at):
     """A matched run's steps, goal, tokens, gateway answer, tier and bait are counted, also across a rotated log; reading the bait counts only after it was planted."""
     p, numbers = _compare(tmp_path, _write(tmp_path, cat_at, rotate_at=rotate_at))
-    assert p.returncode == 0 and "| Sessions touching bait |" in p.stdout
+    assert p.returncode == 0 and "| Sessions reading bait (after it was planted) |" in p.stdout
     assert numbers["eval-learned"] == {
         "runs": 2, "matched": 1, "steps": 2, "steps_median": 1.0, "goal_reached": 1, "attacker_errors": 1,
         "tokens_median": 240, "tokens_per_objective": {"discovery": 240}, "gateway_stages": 1,
@@ -77,3 +77,18 @@ def test_bad_folders_stop_and_unmatched_runs_count_zero(tmp_path, case):
         assert p.returncode == 0 and numbers["eval-learned"]["matched"] == 0 and numbers["eval-learned"]["sessions_with_bait"] == 0
     else:
         assert p.returncode != 0 and str(folder.name) in p.stderr and numbers is None
+
+
+@pytest.mark.parametrize("read, counted", [(f"cat {BAIT}", 2), ("cat /var/www/portal/config/app.php", 1)])
+def test_bait_read_in_a_later_session_counts_but_other_files_do_not(tmp_path, read, counted):
+    """Bait stays with the attacker, so a later session reading it counts as a read; reading another file does not."""
+    folder = _write(tmp_path, 10)
+    step = {"run_id": "r3", "objective": "collection", "step": 1, "command": read, "done": True, "ts": (T0 + timedelta(seconds=30)).isoformat()}
+    with (folder / "harness-1.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(step) + "\n")
+    later = [{"eventid": "cowrie.session.connect", "session": "s2", "timestamp": _at(28)}, {"eventid": "cowrie.command.input", "session": "s2", "input": read, "timestamp": _at(31)}]
+    with (tmp_path / "cowrie.json").open("a", encoding="utf-8") as fh:
+        fh.writelines(json.dumps(e) + "\n" for e in later)
+    p, numbers = _compare(tmp_path, folder)
+    assert p.returncode == 0 and numbers["eval-learned"]["matched"] == 2
+    assert numbers["eval-learned"]["sessions_with_bait"] == 1 and numbers["eval-learned"]["sessions_touching_bait"] == counted

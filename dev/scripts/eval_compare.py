@@ -36,9 +36,16 @@ def compare(folder: Path, events: dict[str, list[dict]], sessions: dict) -> dict
             if r.get("prompt_tokens") is not None:
                 tokens[r["run_id"]] = r["prompt_tokens"] + r.get("completion_tokens", 0)
         tagged += harness_sessions(sessions, str(run))
-    gaps, outcomes, tiers, latency, planted, touched = 0, Counter(), Counter(), [], set(), set()
+    gaps, outcomes, tiers, latency, touched = 0, Counter(), Counter(), [], set()
+    plants = [
+        (e["timestamp"], name, t["session"])
+        for t in tagged
+        for e in events.get(t["session"], [])
+        if e["eventid"] == "cowrie.vulnmaze.bait"
+        for path in e.get("paths") or []
+        for name in (path, posixpath.basename(path))
+    ]
     for t in tagged:
-        bait = []
         for e in events.get(t["session"], []):
             eid = e["eventid"]
             gaps += eid == "cowrie.vulnmaze.route" and e.get("route") == "escalate_candidate"
@@ -47,10 +54,9 @@ def compare(folder: Path, events: dict[str, list[dict]], sessions: dict) -> dict
                 tiers.update(r.split(":")[1] for r in e.get("reasons") or [] if r.startswith("learned:"))
                 if e.get("outcome") == "generated":
                     latency.append(e.get("latency_ms") or 0)
-            if eid == "cowrie.vulnmaze.bait":
-                planted.add(t["session"])
-                bait += [p for path in e.get("paths") or [] for p in (path, posixpath.basename(path))]
-            if eid == "cowrie.command.input" and any(b in (e.get("input") or "") for b in bait):
+            if eid == "cowrie.command.input" and any(
+                at <= e["timestamp"] and name in (e.get("input") or "") for at, name, _ in plants
+            ):
                 touched.add(t["session"])
     per_objective = defaultdict(list)
     for run_id, n in tokens.items():
@@ -69,7 +75,7 @@ def compare(folder: Path, events: dict[str, list[dict]], sessions: dict) -> dict
         "outcomes": dict(sorted(outcomes.items())),
         "answer_ms_median": statistics.median(latency) if latency else None,
         "tiers": dict(sorted(tiers.items())),
-        "sessions_with_bait": len(planted),
+        "sessions_with_bait": len({s for _, _, s in plants}),
         "sessions_touching_bait": len(touched),
     }
 
@@ -110,7 +116,7 @@ def main() -> None:
         ("Model answer time, median (ms)", lambda r: r["answer_ms_median"] if r["answer_ms_median"] is not None else "n/a"),
         ("learned tiers", lambda r: ", ".join(f"{k} {v}" for k, v in r["tiers"].items()) or "none"),
         ("Sessions given bait", lambda r: r["sessions_with_bait"]),
-        ("Sessions touching bait", lambda r: r["sessions_touching_bait"]),
+        ("Sessions reading bait (after it was planted)", lambda r: r["sessions_touching_bait"]),
     ]
     print("| | " + " | ".join(results) + " |")
     print("|---|" + "---|" * len(results))
