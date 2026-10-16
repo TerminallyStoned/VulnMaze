@@ -77,23 +77,27 @@ def compare(folder: Path, events: dict[str, list[dict]], sessions: dict) -> dict
 def main() -> None:
     ap = argparse.ArgumentParser(description="Compare evaluation runs (one folder per mode) in one table.")
     ap.add_argument("folders", nargs="+", type=Path, help="run folders written by eval_mode.py")
-    ap.add_argument("--cowrie", type=Path, help="cowrie.json; default: copied from the running cowrie container")
+    ap.add_argument("--cowrie", nargs="+", type=Path, help="cowrie.json and its rotated cowrie.json.<date> files; default: all of them, copied from the running cowrie container")
     ap.add_argument("--json", type=Path, help="also write the numbers as JSON")
     args = ap.parse_args()
     for folder in args.folders:
         if not folder.is_dir():
             sys.exit(f"{folder}: not a folder")
-    cowrie = args.cowrie
-    if cowrie is None:
-        cowrie = Path(tempfile.mkdtemp()) / "cowrie.json"
-        cp = ["docker", "compose", "-f", "infra/docker-compose.yml", "cp", "cowrie:/cowrie/var/log/cowrie/cowrie.json", str(cowrie)]
+    logs = args.cowrie
+    if logs is None:
+        copy = Path(tempfile.mkdtemp()) / "cowrie"
+        cp = ["docker", "compose", "-f", "infra/docker-compose.yml", "cp", "cowrie:/cowrie/var/log/cowrie", str(copy)]
         subprocess.run(cp, cwd=ROOT, check=True, capture_output=True)
+        logs = sorted(copy.glob("cowrie.json*"))
     events = defaultdict(list)
-    for line in cowrie.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            e = json.loads(line)
-            events[e.get("session")].append(e)
-    sessions = human_sessions([str(cowrie)])
+    for log in logs:
+        for line in log.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                e = json.loads(line)
+                events[e.get("session")].append(e)
+    for session_events in events.values():
+        session_events.sort(key=lambda e: e.get("timestamp", ""))
+    sessions = human_sessions([str(log) for log in logs])
     results = {f.name: compare(f, events, sessions) for f in args.folders}
     rows = [
         ("Sessions (matched to Cowrie)", lambda r: f"{r['runs']} ({r['matched']})"),
