@@ -481,6 +481,23 @@ def test_config_with_escalation_off_loads_nothing(monkeypatch, mode):
     assert (cfg.escalation, cfg.classifiers) == (False, None)
 
 
+@pytest.mark.parametrize("value, prepare", [(None, True), ("on", True), ("off", False), (" OFF ", False)])
+def test_bait_preparation_follows_its_setting(persona, deid, monkeypatch, value, prepare):
+    """Bait is prepared in advance unless VULNMAZE_BAIT_PREPARE is off, in any case; off leaves bait to be written on demand."""
+    monkeypatch.setenv("VULNMAZE_GATEWAY_TOKEN", "t" * 16)
+    if value is not None:
+        monkeypatch.setenv("VULNMAZE_BAIT_PREPARE", value)
+    cfg = GatewayConfig.from_env()
+    gw, _ = learned_gateway(persona, deid, "llm_agent", LOW, FakeBackend(*[answer("x = 1\n")] * len(persona.baits)))
+    gw.cfg = cfg
+
+    async def check():
+        gw.ensure_baits()
+        return gw.bait_task is not None
+
+    assert cfg.prepare_baits is prepare and asyncio.run(check()) is prepare
+
+
 @pytest.mark.parametrize(
     "argv, replies, outcome, stderr",
     [

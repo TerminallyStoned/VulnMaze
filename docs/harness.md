@@ -175,6 +175,8 @@ For each mode it restarts the stack in that mode (no need to edit `infra/.env`),
 | `--sessions N` | 6 per objective (30 in all) |
 | `--max-steps N` | 30 |
 | `--no-gpu` | uses `infra/docker-compose.gpu.yml` |
+| `--fresh-attacker` | off: run one session at a time and clear stored answers before each, so every session counts as a new attacker (by default all sessions from this computer are one attacker, so bait is planted at most once per tactic) |
+| `--no-bait-prepare` | prepare bait in advance (`VULNMAZE_BAIT_PREPARE=on`); with this option, bait is written on demand, to compare the two |
 | `--dry-run` | print the commands and stop |
 
 ### By hand

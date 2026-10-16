@@ -8,6 +8,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
+from vulnmaze.harness.objectives import OBJECTIVES
 from vulnmaze.harness.runner import load_env_file
 
 ROOT = Path(__file__).parents[2]
@@ -23,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-steps", type=int, default=30, help="commands per session")
     ap.add_argument("--gpu", action=argparse.BooleanOptionalAction, default=True, help="add infra/docker-compose.gpu.yml")
     ap.add_argument("--runs", type=Path, default=ROOT / "dev/harness_runs", help="parent folder of the run folders")
+    ap.add_argument("--fresh-attacker", action="store_true", help="run one session at a time and clear stored answers before each, so every session is a new attacker")
+    ap.add_argument("--bait-prepare", action=argparse.BooleanOptionalAction, default=True, help="let the gateway prepare bait in advance (learned)")
     ap.add_argument("--dry-run", action="store_true", help="print the commands and stop")
     args = ap.parse_args(argv)
 
@@ -36,16 +39,22 @@ def main(argv: list[str] | None = None) -> int:
     dc = ["docker", "compose", "-f", "infra/docker-compose.yml", *(["-f", "infra/docker-compose.gpu.yml"] if args.gpu else [])]
     up = [*dc, "up", "-d", "--build", "--wait"]
     harness = [sys.executable, "-m", "vulnmaze.harness.runner", "--env-file", "infra/.env", "--model", model]
-    harness += ["--sessions", str(args.sessions), "--max-steps", str(args.max_steps), "--out", str(out)]
-    harness += ["--reasoning"] if args.reasoning else []
+    harness += ["--max-steps", str(args.max_steps), "--out", str(out), *(["--reasoning"] if args.reasoning else [])]
+    runs = (
+        [[*harness, "--objective", o, "--sessions", "1"] for o in OBJECTIVES for _ in range(args.sessions)]
+        if args.fresh_attacker
+        else [[*harness, "--sessions", str(args.sessions)]]
+    )
+    env = {"VULNMAZE_ESCALATION": args.mode, "VULNMAZE_BAIT_PREPARE": "on" if args.bait_prepare else "off"}
     if args.dry_run:
-        print(f"VULNMAZE_ESCALATION={args.mode} {' '.join(up)}\n{' '.join(harness)}")
+        print(" ".join(f"{k}={v}" for k, v in env.items()), " ".join(up))
+        print("\n".join(" ".join(r) for r in runs))
         return 0
     if args.mode == "learned" and not (ROOT / "infra/classifiers/session_models.joblib").is_file():
         sys.exit("learned needs infra/classifiers/session_models.joblib (see docs/harness.md)")
 
     print(f"== 1/5 restarting the stack in {args.mode} mode", flush=True)
-    subprocess.run(up, cwd=ROOT, env={**os.environ, "VULNMAZE_ESCALATION": args.mode}, check=True)
+    subprocess.run(up, cwd=ROOT, env={**os.environ, **env}, check=True)
 
     print("== 2/5 checking the mode in both containers", flush=True)
     for service in ("cowrie", "llm-gateway"):
@@ -74,17 +83,21 @@ def main(argv: list[str] | None = None) -> int:
 
     start = datetime.now(UTC).isoformat()
     print(f"== 5/5 running the harness into {out}", flush=True)
-    subprocess.run(harness, cwd=ROOT, check=True)
+    for run in runs:
+        if args.fresh_attacker:
+            subprocess.run([*psql, "TRUNCATE attacker_facts"], cwd=ROOT, check=True, capture_output=True)
+        subprocess.run(run, cwd=ROOT, check=True)
+        time.sleep(1.1 if args.fresh_attacker else 0)
 
-    run = next(out.glob("*.jsonl"))
-    rows = [json.loads(line) for line in run.read_text(encoding="utf-8").splitlines() if line.strip()]
+    files = sorted(out.glob("*.jsonl"))
+    rows = [json.loads(line) for f in files for line in f.read_text(encoding="utf-8").splitlines() if line.strip()]
     sessions = {r["run_id"] for r in rows}
     steps = [r for r in rows if not r.get("error")]
     errors = Counter(r["error"][:100] for r in rows if r.get("error"))
     done = {r["run_id"] for r in rows if r.get("done")}
     calls = subprocess.run([*psql, f"SELECT outcome, count(*) FROM llm_calls WHERE ts > '{start}' GROUP BY 1 ORDER BY 1"], cwd=ROOT, capture_output=True, text=True, check=True)
     outcomes = dict(line.split("|") for line in calls.stdout.split())
-    print(f"\n{args.mode}: {run}\n  sessions {len(sessions)}, steps {len(steps)}, goal reached {len(done)}, models {sorted({r.get('model') for r in rows})}")
+    print(f"\n{args.mode}: {out} ({len(files)} run files)\n  sessions {len(sessions)}, steps {len(steps)}, goal reached {len(done)}, models {sorted({r.get('model') for r in rows})}")
     print(f"  gateway outcomes {outcomes or 'none'}")
     for error, n in errors.most_common(3):
         print(f"  attacker error x{n}: {error}")
