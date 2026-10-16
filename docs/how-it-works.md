@@ -57,7 +57,7 @@ In `learned` mode, after the attacker's 3rd typed command and every 5th after th
 | Command and Control | `/usr/local/sbin/portal-update.sh` (internal mirror and access token) |
 | Exfiltration | `/var/backups/portal/portal-db.sql` (users table with password hashes) |
 
-4. plants today's prepared copy of that file and pins it once per attacker. The gateway has the local model write each tactic's file in the background once a day, after the model loads, with a fresh random seed so passwords and tokens change daily, and with the same checks as any answer. Planting then takes about 40 ms instead of the 9 to 12 s it takes to write a file on this GPU; until a file is prepared, it is written on demand;
+4. plants today's prepared copy of that file and pins it once per attacker. The gateway has the local model write each tactic's file in the background once a day, after the model loads, with a fresh random seed so passwords and tokens change daily, and with the same checks as any answer. When the file is planted, every secret value in it (passwords, tokens, keys) is swapped for a random one of the same shape, so each attacker gets their own credentials: if one turns up later, for example in a login or a `mysqldump` command, it identifies the attacker who read it. Planting takes about 40 ms instead of the 9 to 12 s it takes to write a file on this GPU; until a file is prepared, it is written on demand;
 5. Cowrie adds the file to the running session's filesystem and logs a `cowrie.vulnmaze.bait` event.
 
 Live example: after `uname -a`, `id`, `ls /var/www/portal`, the model wrote `database.php` with `define('DB_PASS', '...')` in about 9 s, and a later `cat` showed it.

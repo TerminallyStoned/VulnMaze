@@ -221,6 +221,37 @@ def parse_reply(text: str, mode: str) -> tuple[Candidate, bool]:
     ), stripped
 
 
+SECRET_VALUE = re.compile(
+    r"""(?i)(\w*(?:pass(?:word|wd)?|pwd|secret|token|authorization|api_?key|access_?key)\w*['"]?\s*(?:=>|=|:|,)\s*['"]?(?:Bearer\s+|Basic\s+)?)([^\s'";,)]{4,})"""
+)
+
+
+def personalise(c: Candidate) -> tuple[Candidate, int]:
+    """A copy of prepared bait with each secret value, in its text and facts, swapped for a random one of the same shape; and how many."""
+    fresh: dict[str, str] = {}
+
+    def swap(m: re.Match) -> str:
+        old = m.group(2)
+        if old not in fresh:
+            fresh[old] = "".join(
+                secrets.choice("abcdefghijklmnopqrstuvwxyz")
+                if ch.islower()
+                else secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                if ch.isupper()
+                else secrets.choice("0123456789")
+                if ch.isdigit()
+                else ch
+                for ch in old
+            )
+        return m.group(1) + fresh[old]
+
+    stdout = SECRET_VALUE.sub(swap, c.stdout)
+    facts = dict(c.facts)
+    for old, new in fresh.items():
+        facts = {k: v.replace(old, new) for k, v in facts.items()}
+    return replace(c, stdout=stdout, facts=facts), len(fresh)
+
+
 class Validator:
     """All the deterministic checks on one parsed answer."""
 
@@ -598,8 +629,8 @@ class Gateway:
         prepared = self.baits.get(tactic)
         self.ensure_baits()
         if prepared is not None:
-            accepted = replace(prepared[1])
-            reasons.append(f"bait_prepared:{prepared[0]}")
+            accepted, swapped = personalise(prepared[1])
+            reasons += [f"bait_prepared:{prepared[0]}", f"secrets:{swapped}"]
         elif not await self.concurrency.acquire(self.cfg.busy_wait_s):
             return []
         else:
