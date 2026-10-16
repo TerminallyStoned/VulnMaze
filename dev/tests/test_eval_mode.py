@@ -18,14 +18,16 @@ def _run(tmp_path, *args):
     "args, expected",
     [
         (["off"], ["VULNMAZE_ESCALATION=off", "docker-compose.gpu.yml", "--model google/gemini-3.6-flash", "--max-steps 30", "eval-google-gemini-3.6-flash-off", "--reasoning"]),
-        (["learned", "--model", "z-ai/glm-5.3-flash", "--no-reasoning", "--no-gpu", "--sessions", "1"], ["VULNMAZE_ESCALATION=learned", "--sessions 1", "eval-z-ai-glm-5.3-flash-learned"]),
+        (["learned", "--model", "z-ai/glm-5.3-flash", "--no-reasoning", "--no-gpu", "--sessions", "1"], ["VULNMAZE_ESCALATION=learned", "VULNMAZE_BAIT_PREPARE=on", "--sessions 1", "eval-z-ai-glm-5.3-flash-learned"]),
+        (["learned", "--fresh-attacker", "--sessions", "2", "--no-bait-prepare"], ["VULNMAZE_BAIT_PREPARE=off", "--objective discovery --sessions 1", "--objective command-and-control --sessions 1"]),
     ],
 )
 def test_dry_run_plans_the_mode_and_its_own_run_folder(tmp_path, args, expected):
-    """The mode reaches the restart, and the harness gets the model, limits and a run folder named after model and mode."""
+    """The mode and bait setting reach the restart, the harness gets the model, limits and run folder, and a fresh attacker runs one session per call."""
     result = _run(tmp_path, *args)
     assert result.returncode == 0
     assert all(e in result.stdout for e in expected)
+    assert result.stdout.count("vulnmaze.harness.runner") == (10 if "--fresh-attacker" in args else 1)
     assert ("--reasoning" in result.stdout) == ("--no-reasoning" not in args)
     assert ("gpu" in result.stdout) == ("--no-gpu" not in args)
 

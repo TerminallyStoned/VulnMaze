@@ -127,6 +127,7 @@ class GatewayConfig:
     warmup_attempts: int = 5
     escalation: bool = True
     classifiers: str | None = None
+    prepare_baits: bool = True
     canary: str = field(default_factory=lambda: "ref-" + secrets.token_hex(6))
 
     @classmethod
@@ -148,6 +149,7 @@ class GatewayConfig:
             warmup_attempts=int(env("VULNMAZE_LLM_WARMUP_ATTEMPTS", "5")),
             escalation=mode != "off",
             classifiers=env("VULNMAZE_CLASSIFIERS") if mode == "learned" else None,
+            prepare_baits=env("VULNMAZE_BAIT_PREPARE", "on").strip().lower() != "off",
             canary=env("VULNMAZE_LLM_CANARY") or "ref-" + secrets.token_hex(6),
         )
 
@@ -653,10 +655,10 @@ class Gateway:
         return files
 
     def ensure_baits(self) -> None:
-        """In learned mode, prepare today's bait files in the background unless they are ready or being prepared."""
+        """In learned mode with preparation on, prepare today's bait files in the background unless they are ready or being prepared."""
         today = datetime.now(UTC).date().isoformat()
         ready = all(self.baits.get(t, ("",))[0] == today for t in self.persona.baits)
-        if self.classifiers is None or not self.model_ready or ready:
+        if self.classifiers is None or not self.cfg.prepare_baits or not self.model_ready or ready:
             return
         if self.bait_task is not None and not self.bait_task.done():
             return
