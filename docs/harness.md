@@ -135,7 +135,7 @@ It prints the sessions per objective, for example `{'discovery': 6, 'credential-
 Match each harness session to the honeypot's session for it:
 ```bash
 docker compose -f infra/docker-compose.yml cp cowrie:/cowrie/var/log/cowrie/cowrie.json cowrie.json
-uv run python dev/scripts/tag_human_sessions.py cowrie.json --harness dev/harness_runs/<run>.jsonl --out tiers-harness.jsonl
+uv run python dev/scripts/tag_sessions.py cowrie.json --harness dev/harness_runs/<run>.jsonl --out tiers-harness.jsonl
 ```
 
 See what the honeypot did with each command since your start time (replace the time with yours):

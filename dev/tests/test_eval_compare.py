@@ -59,7 +59,7 @@ def test_compare_counts_engagement_gateway_learned_and_bait_use(tmp_path, cat_at
         "runs": 2, "matched": 1, "steps": 2, "steps_median": 1.0, "goal_reached": 1, "attacker_errors": 1,
         "tokens_median": 240, "tokens_per_objective": {"discovery": 240}, "gateway_stages": 1,
         "outcomes": {"generated": 1}, "answer_ms_median": 900, "tiers": {"llm_agent": 1},
-        "sessions_with_bait": 1, "sessions_touching_bait": touching,
+        "sessions_with_bait": 1, "sessions_reading_bait": touching,
     }
 
 
@@ -91,4 +91,4 @@ def test_bait_read_in_a_later_session_counts_but_other_files_do_not(tmp_path, re
         fh.writelines(json.dumps(e) + "\n" for e in later)
     p, numbers = _compare(tmp_path, folder)
     assert p.returncode == 0 and numbers["eval-learned"]["matched"] == 2
-    assert numbers["eval-learned"]["sessions_with_bait"] == 1 and numbers["eval-learned"]["sessions_touching_bait"] == counted
+    assert numbers["eval-learned"]["sessions_with_bait"] == 1 and numbers["eval-learned"]["sessions_reading_bait"] == counted

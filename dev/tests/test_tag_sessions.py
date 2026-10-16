@@ -20,7 +20,7 @@ def _tag(tmp_path, lines, *extra):
     with gzip.open(log, "wt", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
     out = tmp_path / "tiers.jsonl"
-    script = ROOT / "dev/scripts/tag_human_sessions.py"
+    script = ROOT / "dev/scripts/tag_sessions.py"
     subprocess.run([sys.executable, str(script), str(log), "--out", str(out), *extra], check=True)
     return [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
 

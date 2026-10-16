@@ -8,7 +8,7 @@ import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from tag_human_sessions import harness_sessions, human_sessions
+from vulnmaze.harness.matching import connected_sessions, harness_sessions
 
 ROOT = Path(__file__).parents[2]
 
@@ -76,7 +76,7 @@ def compare(folder: Path, events: dict[str, list[dict]], sessions: dict) -> dict
         "answer_ms_median": statistics.median(latency) if latency else None,
         "tiers": dict(sorted(tiers.items())),
         "sessions_with_bait": len({s for _, _, s in plants}),
-        "sessions_touching_bait": len(touched),
+        "sessions_reading_bait": len(touched),
     }
 
 
@@ -103,7 +103,7 @@ def main() -> None:
                 events[e.get("session")].append(e)
     for session_events in events.values():
         session_events.sort(key=lambda e: e.get("timestamp", ""))
-    sessions = human_sessions([str(log) for log in logs])
+    sessions = connected_sessions([str(log) for log in logs])
     results = {f.name: compare(f, events, sessions) for f in args.folders}
     rows = [
         ("Sessions (matched to Cowrie)", lambda r: f"{r['runs']} ({r['matched']})"),
@@ -116,7 +116,7 @@ def main() -> None:
         ("Model answer time, median (ms)", lambda r: r["answer_ms_median"] if r["answer_ms_median"] is not None else "n/a"),
         ("learned tiers", lambda r: ", ".join(f"{k} {v}" for k, v in r["tiers"].items()) or "none"),
         ("Sessions given bait", lambda r: r["sessions_with_bait"]),
-        ("Sessions reading bait (after it was planted)", lambda r: r["sessions_touching_bait"]),
+        ("Sessions reading bait (after it was planted)", lambda r: r["sessions_reading_bait"]),
     ]
     print("| | " + " | ".join(results) + " |")
     print("|---|" + "---|" * len(results))
