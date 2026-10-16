@@ -4,7 +4,7 @@
 - `results/`: one CSV and summary per run. Two people rate each answer in the `rater_1` and `rater_2` columns; commit the rated CSVs.
 - `reference/`: the same golden set run on a real Debian 12 server, to compare the honeypot's answers with real output:
   - `Dockerfile`: Debian 12 booted with systemd, with nginx, MariaDB, PHP 8.2-FPM and the tools the golden set uses;
-  - `debian12-20261016.json`: each command with the real output and the honeypot's answer from `results/20261016-012647-ollama_qwen3.5_4b.csv` (real output cut at 4,000 characters);
+  - `debian12-20261016.json`: each command with the real output and the honeypot's answer from the morning run of 16 Oct, before the fixes for #87 to #89 (real output cut at 4,000 characters). That run's CSV was not kept; the answers are in this file. It used the old trap09 and trap12 commands;
   - `review-claude-20261016.csv`: a review of each model answer against the real output by Claude (1 = closely matches the real format, timestamps ignored). It is an AI's judgement, not the two-person rating.
 
   To redo it (about 5 minutes; the image downloads Debian packages once):
