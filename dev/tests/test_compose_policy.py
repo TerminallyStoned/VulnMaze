@@ -102,3 +102,17 @@ def test_cowrie_timeouts_fit_human_sessions():
 def test_short_or_inconsistent_timeouts_are_rejected(idle, session):
     """Cowrie's defaults, a session cap above HAProxy's 1 h, or an idle limit above the session cap all fail."""
     assert not _fits_human_sessions(idle, session)
+
+
+@pytest.mark.parametrize("name", ["ingester", "llm-gateway", "probe"])
+def test_pipeline_services_share_one_image(compose, name):
+    """Every service built from the pipeline Dockerfile names the same image, so Compose stores it once."""
+    svc = compose["services"][name]
+    assert svc["build"]["dockerfile"] == "infra/pipeline/Dockerfile" and svc["image"] == "vulnmaze-pipeline:local"
+
+
+@pytest.mark.parametrize("name", ["cowrie", "edge", "postgres", "ollama"])
+def test_other_services_do_not_use_the_pipeline_image(compose, name):
+    """The honeypot and the third-party services never run the pipeline image, which holds the database and model code."""
+    svc = compose["services"][name]
+    assert svc.get("image") != "vulnmaze-pipeline:local" and svc.get("build", {}).get("dockerfile") != "infra/pipeline/Dockerfile"
