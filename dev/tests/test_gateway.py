@@ -9,7 +9,7 @@ from vulnmaze.classify.session import fit
 from vulnmaze.classify.tier import FEATURES
 from vulnmaze.llm import sanitize
 from vulnmaze.llm.backends import ModelError, ModelReply
-from vulnmaze.llm.gateway import HINTS, Context, Gateway, GatewayConfig, parse_reply
+from vulnmaze.llm.gateway import HINTS, SECRET_VALUE, Candidate, Context, Gateway, GatewayConfig, parse_reply, personalise
 from vulnmaze.llm.schema import AssessRequest, CreatedFile, EscalationRequest
 
 
@@ -510,8 +510,8 @@ def test_output_that_only_mentions_command_not_found_is_kept(persona, deid, argv
 
 
 def test_prepared_bait_is_planted_at_once_without_a_model_call(persona, deid):
-    """Each tactic's bait is written once for the day; a qualifying session then gets it with no model call, as a honeytoken."""
-    content = "<?php\ndefine('DB_PASS', 'k3d9');\n"
+    """Each tactic's bait is written once for the day; a qualifying session then gets it with no model call and its own password, as a honeytoken."""
+    content = "<?php\ndefine('DB_PASS', 'k3d9x7');\n"
     backend = FakeBackend(*[answer(content)] * len(persona.baits))
     gw, db = learned_gateway(persona, deid, "llm_agent", LOW, backend)
     today = datetime.now(UTC).date().isoformat()
@@ -519,8 +519,37 @@ def test_prepared_bait_is_planted_at_once_without_a_model_call(persona, deid):
     assert set(gw.baits) == set(persona.baits) and [r["outcome"] for r in db.logged] == ["bait_prepared"] * len(persona.baits)
     files = asyncio.run(gw.assess(AssessRequest(session="s1", src_ip="198.51.100.9", username="root", history=["uname -a"] * 2)))
     path = persona.baits["Discovery"]["path"]
-    assert files == [CreatedFile(path=path, content=content)] and backend.calls == len(persona.baits)
-    assert db.commits[-1].files == [(path, content)] and f"bait_prepared:{today}" in db.logged[-1]["reasons"]
+    planted = files[0].content
+    assert [f.path for f in files] == [path] and backend.calls == len(persona.baits)
+    assert planted.startswith("<?php\ndefine('DB_PASS', '") and planted != content and len(planted) == len(content)
+    assert db.commits[-1].files == [(path, planted)] and {f"bait_prepared:{today}", "secrets:1"} <= set(db.logged[-1]["reasons"])
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "<?php\ndefine('DB_HOST', 'localhost');\ndefine('DB_PASS', 'SecureMuni2024!#');\n",
+        "[client]\nuser = root\npassword = Tr0ub4dor&3\n",
+        'TOKEN="ghp_abcDEF123456"\ncurl -H "Authorization: Bearer abcdef123456" http://10.20.4.30/r.tgz\n',
+    ],
+)
+def test_personalise_gives_each_attacker_new_secrets_of_the_same_shape(text):
+    """Every secret value changes per call, keeps its length and character classes, and changes in the facts too; the rest is untouched."""
+    old = SECRET_VALUE.findall(text)
+    first, n = personalise(Candidate(True, text, "", 0, [], {"db_password": old[0][1]}))
+    second, _ = personalise(Candidate(True, text, "", 0, [], {}))
+    new = SECRET_VALUE.findall(first.stdout)
+    assert n == len(old) and first.stdout != text and first.stdout != second.stdout
+    assert SECRET_VALUE.sub(r"\1", first.stdout) == SECRET_VALUE.sub(r"\1", text)
+    assert all(len(a) == len(b) and all(x.isalpha() == y.isalpha() and x.isdigit() == y.isdigit() for x, y in zip(a, b, strict=True)) for (_, a), (_, b) in zip(old, new, strict=True))
+    assert first.facts == {"db_password": new[0][1]}
+
+
+@pytest.mark.parametrize("text", ["30 2 * * * root /usr/local/sbin/portal-backup.sh\n", "define('DB_HOST', 'localhost');\n", "password = abc\n", ""])
+def test_personalise_leaves_text_without_secrets_unchanged(text):
+    """Text with no secret marker, or a value too short to be a secret, is planted as prepared."""
+    c = Candidate(True, text, "", 0, [], {"db_host": "localhost"})
+    assert personalise(c) == (c, 0)
 
 
 def test_unprepared_bait_is_written_on_demand(persona, deid):
