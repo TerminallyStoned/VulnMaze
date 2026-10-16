@@ -38,7 +38,7 @@ import shlex
 import time
 from collections import Counter
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 import joblib
@@ -419,6 +419,8 @@ class Gateway:
         self.warm_task: asyncio.Task | None = None
         self.warm_failed = False
         self.classifiers = joblib.load(cfg.classifiers) if cfg.classifiers else None
+        self.baits: dict[str, tuple[str, Candidate]] = {}
+        self.bait_task: asyncio.Task | None = None
 
     def ensure_warming(self) -> None:
         """Load the model in the background, with no deadline, unless it is loaded, loading or failed."""
@@ -437,6 +439,7 @@ class Gateway:
                 await asyncio.wait_for(self.backend.generate([], None, timeout), timeout)
                 self.model_ready = True
                 log.info("model loaded: %s in %.1f s", self.backend.name, time.perf_counter() - t0)
+                self.ensure_baits()
                 return
             except (ModelError, TimeoutError) as exc:
                 log.warning(
@@ -588,18 +591,22 @@ class Gateway:
             argv=["cat", bait["path"]],
             history=req.history,
         )
-        if await self._db(self.db.baited, bait_req, tactic) or not await self.concurrency.acquire(
-            self.cfg.busy_wait_s
-        ):
+        if await self._db(self.db.baited, bait_req, tactic):
             return []
         reasons = [p["reason"], f"bait:{tactic}"]
         stats = dict(NO_STATS)
-        try:
-            ctx = await self._db(self.db.load, bait_req, "cat", output_key(bait_req))
-            ctx.facts[f"contents of {bait['path']}"] = bait["contents"]
-            accepted = await self._generate(bait_req, ctx, True, t0 + self.cfg.deadline_s, reasons, stats)
-        finally:
-            self.concurrency.release()
+        prepared = self.baits.get(tactic)
+        self.ensure_baits()
+        if prepared is not None:
+            accepted = replace(prepared[1])
+            reasons.append(f"bait_prepared:{prepared[0]}")
+        elif not await self.concurrency.acquire(self.cfg.busy_wait_s):
+            return []
+        else:
+            try:
+                accepted = await self._write_bait(bait_req, bait, t0 + self.cfg.deadline_s, reasons, stats)
+            finally:
+                self.concurrency.release()
         files = []
         if accepted is not None and accepted.stdout.strip():
             accepted.files = [(bait["path"], accepted.stdout)]
@@ -613,6 +620,50 @@ class Gateway:
             stats,
         )
         return files
+
+    def ensure_baits(self) -> None:
+        """In learned mode, prepare today's bait files in the background unless they are ready or being prepared."""
+        today = datetime.now(UTC).date().isoformat()
+        ready = all(self.baits.get(t, ("",))[0] == today for t in self.persona.baits)
+        if self.classifiers is None or not self.model_ready or ready:
+            return
+        if self.bait_task is not None and not self.bait_task.done():
+            return
+        self.bait_task = asyncio.create_task(self._prepare_baits(today))
+
+    async def _prepare_baits(self, day: str) -> None:
+        """Have the model write each tactic's bait file for day with fresh random values, keeping the ones that pass every check."""
+        for tactic, bait in self.persona.baits.items():
+            if self.baits.get(tactic, ("",))[0] == day:
+                continue
+            t0 = time.perf_counter()
+            req = EscalationRequest(
+                session=f"bait-{day}", src_ip="192.0.2.1", username="root", argv=["cat", bait["path"]]
+            )
+            reasons, stats = [f"bait:{tactic}"], dict(NO_STATS)
+            await self.concurrency.acquire(3600)
+            try:
+                accepted = await self._write_bait(
+                    req, bait, time.perf_counter() + self.cfg.deadline_s, reasons, stats
+                )
+            finally:
+                self.concurrency.release()
+            ok = accepted is not None and bool(accepted.stdout.strip())
+            if ok:
+                self.baits[tactic] = (day, accepted)
+            result = ShellResult(
+                outcome="bait_prepared" if ok else "bait_failed",
+                reasons=reasons,
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+            )
+            await self._log(req, result, stats)
+
+    async def _write_bait(self, req, bait: dict[str, str], deadline: float, reasons: list[str], stats: dict):
+        """The model's contents for one bait file, asked as `cat <path>` with the persona's description and a random seed for invented values."""
+        ctx = await self._db(self.db.load, req, "cat", output_key(req))
+        ctx.facts[f"contents of {bait['path']}"] = bait["contents"]
+        ctx.facts["random seed for invented passwords, tokens and hosts"] = secrets.token_hex(4)
+        return await self._generate(req, ctx, True, deadline, reasons, stats)
 
     async def _generate(
         self, req, ctx: Context, installed: bool, deadline: float, reasons: list[str], stats: dict

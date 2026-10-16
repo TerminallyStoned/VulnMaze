@@ -12,7 +12,15 @@ MAX_FILES = 3
 MAX_FACTS = 5
 
 Outcome = Literal[
-    "generated", "pinned", "not_installed", "refused", "fallback", "declined", "bait", "bait_failed"
+    "generated",
+    "pinned",
+    "not_installed",
+    "refused",
+    "fallback",
+    "declined",
+    "bait",
+    "bait_prepared",
+    "bait_failed",
 ]
 
 
