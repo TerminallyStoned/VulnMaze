@@ -9,18 +9,20 @@ git show 26d38ed:src/vulnmaze/llm/sanitize.py | sed -n 120,128p
 
 To check whether a problem still exists on a later commit, re-run the "How to find" step listed under it.
 
+Status column updated on 16 Oct 2026 from the GitHub issues each problem was filed as; the sections below are unchanged from the review.
+
 | ID | Problem | Severity | Status |
 |----|---------|----------|--------|
-| R1 | Cowrie's `head` rejects `head -1` (fingerprint) | High | Open |
-| R2 | Leak filter rejects real output that starts with "OK", "Okay" or "Sure" | Medium | Open |
-| R3 | `state-api` service runs but nothing calls it | Medium | Open |
-| R4 | Files referenced in docstrings do not exist | Medium | Open |
-| R5 | Usernames are stored without de-identification | Medium | Open |
-| R6 | Security-floor constants duplicated across modules | Low | Open |
-| R7 | Digest timing list grows without a cap | Low | Open |
-| R8 | Ingester health check always passes | Low | Open |
-| R9 | Ollama image unpinned (`latest`) | Low | Open |
-| R10 | Pipeline image built four times under different names | Low | Open |
+| R1 | Cowrie's `head` rejects `head -1` (fingerprint) | High | Fixed (#8) |
+| R2 | Leak filter rejects real output that starts with "OK", "Okay" or "Sure" | Medium | Fixed (#7) |
+| R3 | `state-api` service runs but nothing calls it | Medium | Open (#16) |
+| R4 | Files referenced in docstrings do not exist | Medium | Fixed (#11) |
+| R5 | Usernames are stored without de-identification | Medium | Fixed (#10) |
+| R6 | Security-floor constants duplicated across modules | Low | Open (#15) |
+| R7 | Digest timing list grows without a cap | Low | Fixed (#12) |
+| R8 | Ingester health check always passes | Low | Fixed (#13) |
+| R9 | Ollama image unpinned (`latest`) | Low | Fixed (#9) |
+| R10 | Pipeline image built four times under different names | Low | Open (#14) |
 | R11 | State API compared its token with `!=` (timing leak) | Low | Fixed in the uv/tests PR |
 
 ---

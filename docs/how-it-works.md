@@ -124,8 +124,33 @@ What it shows:
 - No agent session was declined, and three sessions the tier model leaned towards "bot" (0.54 to 0.74) were escalated thanks to the 90% cutoff.
 - With so few gaps, the modes barely differ in engagement at 30 sessions. That is why honeytokens were added: they make `learned` act on every qualifying session, not only on the rare missing command.
 
-### Final series (to do, issue #65)
-Attacker `google/gemini-3.6-flash` (unseen by the tier model), all three modes, after honeytokens, the persona filesystem and the reply-limit fix. The table from `eval_compare.py` goes into the report. Things to watch: Gemini often packs several commands into one line and declares its goal reached after 1 or 2 steps, which keeps sessions short in every mode.
+### Final series, 15 and 16 Oct
+Attacker `google/gemini-3.6-flash` with reasoning on (unseen by the tier model), 30 sessions per mode, at most 30 commands each, with honeytokens, the persona filesystem and the reply-limit fix. Produced with `eval_compare.py` (issue #65):
+
+| | `off` | `all` | `learned` |
+|---|---|---|---|
+| Sessions (matched to Cowrie) | 30 (30) | 30 (30) | 30 (30) |
+| Attacker commands (median per session) | 80 (2) | 86 (2.5) | 102 (3) |
+| Sessions reaching their goal | 29 | 30 | 29 |
+| Attacker errors | 1 | 0 | 1 |
+| Attacker tokens per session (median) | 1,359 | 1,968 | 2,079 |
+| Commands that reached the gateway | 11 | 8 | 11 |
+| Gateway outcomes | none (`command not found`) | 4 generated, 2 stored, 2 fallback | 7 generated, 1 stored, 3 fallback |
+| Model answer time (median) | n/a | 15.7 s | 9.3 s |
+| `learned` decisions | | | 3 LLM agent, 1 bot (0.76, escalated), 6 no tier yet |
+| Agent sessions declined | | | 0 |
+| Sessions given bait | 0 | 0 | 1 |
+| Sessions reading bait (after it was planted) | 0 | 0 | 2 |
+
+What happened with the bait, from the Cowrie log: `learned` judged one session an LLM agent with risky commands (R3) and planted `/var/www/portal/config/database.php` with the user `portal_app` and a password. The bait stays with the attacker, so two later sessions found it with `ls` and read it with `cat`, and one of them **used the password** (`mysqldump -u portal_app -p'...' --all-databases > /tmp/stage/database.sql`) and then packed the config folder into an archive for exfiltration. This is the proposal's aim of making an LLM agent spend effort on planted material while its objectives and tooling are recorded.
+
+What the numbers show, and how sure we can be:
+- Engagement rises from `off` to `all` to `learned`: 80, 86 and 102 attacker commands (+28% from `off` to `learned`), and median attacker tokens 1,359, 1,968 and 2,079 (+53%). With 30 sessions per mode and very short sessions, read these as indications, not significant differences.
+- No agent session was declined. The one decision that leaned "bot" (0.76) was escalated because it was below the 0.9 cutoff.
+- 6 of the 11 `learned` decisions had no tier yet: the tier needs two typed commands, and many Gemini sessions are one or two commands long. Such sessions are escalated, as the design intends for unsure cases.
+- Bait is first considered at the 3rd typed command, and only once per attacker and tactic. In this run all sessions come from one attacker (the local machine), so one plant served every later session. Short sessions only see bait planted earlier.
+- 3 fallbacks in `learned` and 2 in `all`: 4 were `busy` (Gemini's short sessions start while the local model is still answering an earlier one; answers take 6 to 36 s) and 1 a timeout. One 4B model on a 4 GB GPU cannot keep up with a fast attacker; a larger GPU or a smaller model would.
+- Gemini packs several commands into one line and declares its goal reached after 1 to 3 steps, so sessions are short in every mode. The 15 Oct Coder series (12-command cap) gave longer sessions but had no honeytokens.
 
 ## 9. What to write where in the report
 
@@ -136,9 +161,9 @@ Attacker `google/gemini-3.6-flash` (unseen by the tier model), all three modes, 
 | Solution design | Sections 2 to 5, with a diagram of Cowrie → router → gateway → model, the classifiers beside the gateway, and the state store |
 | Implementation | Section 6 (data, models), section 7 (harness), the repository layout in the README |
 | Evaluation method | Section 8: three modes, 30 sessions each, same attacker; shape-grouped cross-validation for the classifiers |
-| Results | The classifier tables (section 6), the 90% cutoff numbers (section 3), the evaluation table (section 8) |
-| Discussion | Only 2 to 3% of commands need an LLM; tier model and unseen attackers; why honeytokens |
-| Limitations | One local model (`qwen3.5:4b`, not fine-tuned); harness attackers only, no wild traffic; 14 human sessions from one person; 30 sessions per mode; LLM labels; no Credential Access class; no agent-specific deception |
+| Results | The classifier tables (section 6), the 90% cutoff numbers (section 3), the final evaluation table and the bait example (section 8) |
+| Discussion | Only 2 to 3% of commands need an LLM; tier model and unseen attackers; the bait being found and used; why `learned` and `all` differ mainly through bait |
+| Limitations | One local model (`qwen3.5:4b`, not fine-tuned) that falls behind fast attackers; harness attackers only, no wild traffic; two attacker models; one attacker identity per run, so bait is shared by all its sessions; 14 human sessions from one person; 30 short sessions per mode; LLM labels; no Credential Access class; no agent-specific deception |
 | Future work | Agent deception from the proposal; fine-tuned model; RoBERTa and sequence models; wild deployment; more human sessions |
 
-Proposal items **not done**, to state honestly: the fine-tuned honeypot model, RoBERTa and LSTM/FHMM classifiers, UMAP + HDBSCAN clustering, the deception for LLM agents, evaluation on wild traffic and with volunteer red-teamers.
+Proposal items **not done**, to state honestly: the fine-tuned honeypot model, RoBERTa and LSTM/FHMM classifiers, UMAP + HDBSCAN clustering, the deception for LLM agents, evaluation on wild traffic and with volunteer red-teamers. In the code, the state API service (`state-api`) runs but nothing calls it yet (issue #16); the gateway reads the state store directly.
