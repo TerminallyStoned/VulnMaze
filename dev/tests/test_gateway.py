@@ -477,3 +477,31 @@ def test_config_with_escalation_off_loads_nothing(monkeypatch, mode):
     monkeypatch.setenv("VULNMAZE_CLASSIFIERS", "/c/m.joblib")
     cfg = GatewayConfig.from_env()
     assert (cfg.escalation, cfg.classifiers) == (False, None)
+
+
+@pytest.mark.parametrize(
+    "argv, replies, outcome, stderr",
+    [
+        (["lsof", "-i", ":80"], [answer("lsof: command not found\n", exit_code=127)] * 2, "fallback", "-bash: fork: Resource temporarily unavailable\n"),
+        (["fail2ban-client", "status"], [answer(stderr="fail2ban-client: command not found\n", exit_code=127)], "not_installed", "-bash: fail2ban-client: command not found\n"),
+        (["cloud-init", "status"], [answer("COMMAND NOT FOUND\ncloud-init: command not found\n")], "not_installed", "-bash: cloud-init: command not found\n"),
+    ],
+)
+def test_written_command_not_found_counts_as_not_installed(persona, deid, argv, replies, outcome, stderr):
+    """A model answer that says command not found or exits 127 is not installed: rejected for a program the persona installs, bash's exact error otherwise."""
+    result, db = run(persona, deid, argv, FakeBackend(*replies))
+    assert (result.outcome, result.stderr, result.stdout) == (outcome, stderr, "")
+    assert db.commits == [] and ("exists_mismatch" in result.reasons) == (argv[0] == "lsof")
+
+
+@pytest.mark.parametrize(
+    "argv, reply",
+    [
+        (["journalctl", "-n", "2", "--no-pager"], answer("Oct 16 10:00:01 web-portal-01 sudo[812]: foo: command not found\nOct 16 10:00:02 web-portal-01 CRON[813]: session opened\n")),
+        (["systemctl", "status", "nosuch"], answer(stderr="Unit nosuch.service could not be found.\n", exit_code=4)),
+    ],
+)
+def test_output_that_only_mentions_command_not_found_is_kept(persona, deid, argv, reply):
+    """Output where command not found is not the program's own last word, with an exit code other than 127, stays a normal answer."""
+    result, db = run(persona, deid, argv, FakeBackend(reply))
+    assert result.outcome == "generated" and len(db.commits) == 1
