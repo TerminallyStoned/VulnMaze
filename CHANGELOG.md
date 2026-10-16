@@ -37,6 +37,7 @@
 - Bait in the running session (#63): in `learned` mode Cowrie asks `/v1/assess` in the background after the 3rd typed command and every 5th after that, adds the returned bait files to the session's filesystem and logs a `cowrie.vulnmaze.bait` event; the attacker never waits for it.
 - One security-floor check (#15): the standard bin directories and the program-name pattern are defined once in `router/rules.py`, and Cowrie and the gateway both decide what may reach the LLM with `router.program_name()`.
 - State API removed (#16): the `state-api` service, `vulnmaze.state.api` and `VULNMAZE_STATE_TOKEN` are gone; nothing called the API, and the gateway reads and writes the state store directly. An existing `infra/.env` may keep its `VULNMAZE_STATE_TOKEN` line; it is ignored.
+- Session matching in the package (#83): `dev/scripts/tag_human_sessions.py` is now `dev/scripts/tag_sessions.py` (it also tags harness sessions), its matching functions are `vulnmaze.harness.matching.connected_sessions` and `harness_sessions`, used by it and by `eval_compare.py`, and `eval_compare.py`'s JSON key is `sessions_reading_bait`.
 
 ## v0.6.1: Fixes from the first full-stack run
 - Ingester never committed (`ingest/service.py`): the connection was not in autocommit mode, so the first SELECT opened a transaction that never closed and every batch became a savepoint inside it. Logs said "inserted", but no other connection saw the rows and a restart lost them. Now `autocommit=True`; same for the public loader.
