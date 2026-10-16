@@ -80,6 +80,14 @@ def _identity(protocol) -> tuple[str, str]:
     return str(ident.get("session", "")), str(ident.get("src_ip") or getattr(protocol, "realClientIP", ""))
 
 
+def _history(protocol) -> list[str]:
+    """The session's command lines so far as text, the line being run last."""
+    return [
+        h.decode("utf-8", "replace") if isinstance(h, bytes) else str(h)
+        for h in getattr(protocol, "historyLines", [])
+    ]
+
+
 def materialise(fs, path: str, content: str, uid: int = 0, gid: int = 0) -> bool:
     """Put a file into this session's in-memory filesystem (Cowrie keeps
     file bytes in the node, so nothing is written to disk)."""
@@ -113,10 +121,7 @@ def make_command(name: str):
             self._t0 = time.monotonic()
             session, src_ip = _identity(self.protocol)
             login = getattr(getattr(self.protocol, "user", None), "username", "root")
-            history = [
-                h.decode("utf-8", "replace") if isinstance(h, bytes) else str(h)
-                for h in getattr(self.protocol, "historyLines", [])[-HISTORY - 1 : -1]
-            ]
+            history = _history(self.protocol)[-HISTORY - 1 : -1]
             stdin = None
             if self.input_data:
                 stdin = self.input_data[:MAX_STDIN].decode("utf-8", "replace")
@@ -209,10 +214,7 @@ def assess(protocol) -> None:
         return
     session, src_ip = _identity(protocol)
     user = protocol.user
-    history = [
-        h.decode("utf-8", "replace") if isinstance(h, bytes) else str(h)
-        for h in getattr(protocol, "historyLines", [])[-HISTORY:]
-    ]
+    history = _history(protocol)[-HISTORY:]
 
     def load(files):
         uid, gid = getattr(user, "uid", 0), getattr(user, "gid", 0)

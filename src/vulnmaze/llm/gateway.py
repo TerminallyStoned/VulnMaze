@@ -84,6 +84,13 @@ HINTS = {
     "exists_mismatch": "This program is installed on this server.",
 }
 MAX_FILES_AT_LOGIN = 50
+NO_STATS = {
+    "attempts": 0,
+    "model_ms": 0,
+    "prompt_tokens": None,
+    "completion_tokens": None,
+    "rejected_output": None,
+}
 MAX_FACT_VALUE = 200
 
 # Deterministic answers, used when the model is not asked or not trusted.
@@ -128,6 +135,7 @@ class GatewayConfig:
         if len(token) < 16:
             raise RuntimeError("VULNMAZE_GATEWAY_TOKEN must be set (>= 16 chars)")
         env = os.environ.get
+        mode = env("VULNMAZE_ESCALATION", "off").strip().lower()
         return cls(
             token=token,
             deadline_s=float(env("VULNMAZE_LLM_DEADLINE_S", "15")),
@@ -138,10 +146,8 @@ class GatewayConfig:
             busy_wait_s=float(env("VULNMAZE_LLM_BUSY_WAIT_S", "1")),
             warmup_timeout_s=float(env("VULNMAZE_LLM_WARMUP_TIMEOUT_S", "300")),
             warmup_attempts=int(env("VULNMAZE_LLM_WARMUP_ATTEMPTS", "5")),
-            escalation=env("VULNMAZE_ESCALATION", "off").strip().lower() != "off",
-            classifiers=env("VULNMAZE_CLASSIFIERS")
-            if env("VULNMAZE_ESCALATION", "off").strip().lower() == "learned"
-            else None,
+            escalation=mode != "off",
+            classifiers=env("VULNMAZE_CLASSIFIERS") if mode == "learned" else None,
             canary=env("VULNMAZE_LLM_CANARY") or "ref-" + secrets.token_hex(6),
         )
 
@@ -457,13 +463,7 @@ class Gateway:
     async def escalate(self, req: EscalationRequest) -> ShellResult:
         t0 = time.perf_counter()
         deadline = t0 + self.cfg.deadline_s
-        stats = {
-            "attempts": 0,
-            "model_ms": 0,
-            "prompt_tokens": None,
-            "completion_tokens": None,
-            "rejected_output": None,
-        }
+        stats = dict(NO_STATS)
         reasons: list[str] = []
         argv0 = req.argv[0]
 
@@ -514,7 +514,7 @@ class Gateway:
 
         if self.classifiers is not None:
             p = await self._predict(req.session, req.history, [shlex.join(req.argv)])
-            reasons.append(f"learned:{p['tier']}:{p['tier_p']}:{p['session_max']}:{p['session_high']}")
+            reasons.append(p["reason"])
             if p["tier"] == "bot" and p["tier_p"] >= 0.9 and p["session_max"] not in HIGH:
                 return finish("declined", *not_found(argv0))
 
@@ -554,13 +554,14 @@ class Gateway:
         return finish("generated", value["stdout"], value["stderr"], value["exit_code"], files)
 
     async def _predict(self, session: str, history: list[str], current: list[str]) -> dict:
-        """Classifier predictions on the session's digest commands, the history lines it has not caught up with, and current."""
+        """Classifier predictions, with their learned:<tier>:<probability>:<max>:<high> reason, on the session's digest commands, the history lines it has not caught up with, and current."""
         commands = await self._db(self.db.session_commands, session)
         ts = datetime.now(UTC).isoformat()
         seen = [i for i, h in enumerate(history) if commands and h == commands[-1].get("input")]
         lagging = history[seen[-1] + 1 :] if seen else history if not commands else []
         commands = [*commands, *({"ts": ts, "input": h} for h in [*lagging, *current])]
-        return await asyncio.to_thread(predict, self.classifiers, commands[-50:])
+        p = await asyncio.to_thread(predict, self.classifiers, commands[-50:])
+        return {**p, "reason": f"learned:{p['tier']}:{p['tier_p']}:{p['session_max']}:{p['session_high']}"}
 
     async def assess(self, req: AssessRequest) -> list[CreatedFile]:
         """Plant the persona's bait for the session's main tactic, once per attacker, when learned mode judges the session worth deceiving."""
@@ -576,43 +577,34 @@ class Gateway:
             return []
         tactic = tactics.most_common(1)[0][0]
         bait = self.persona.baits[tactic]
-        er = EscalationRequest(
+        bait_req = EscalationRequest(
             session=req.session,
             src_ip=req.src_ip,
             username=req.username,
             argv=["cat", bait["path"]],
             history=req.history,
         )
-        if await self._db(self.db.baited, er, tactic) or not await self.concurrency.acquire(
+        if await self._db(self.db.baited, bait_req, tactic) or not await self.concurrency.acquire(
             self.cfg.busy_wait_s
         ):
             return []
-        reasons = [
-            f"learned:{p['tier']}:{p['tier_p']}:{p['session_max']}:{p['session_high']}",
-            f"bait:{tactic}",
-        ]
-        stats = {
-            "attempts": 0,
-            "model_ms": 0,
-            "prompt_tokens": None,
-            "completion_tokens": None,
-            "rejected_output": None,
-        }
+        reasons = [p["reason"], f"bait:{tactic}"]
+        stats = dict(NO_STATS)
         try:
-            ctx = await self._db(self.db.load, er, "cat", output_key(er))
+            ctx = await self._db(self.db.load, bait_req, "cat", output_key(bait_req))
             ctx.facts[f"contents of {bait['path']}"] = bait["contents"]
-            accepted = await self._generate(er, ctx, True, t0 + self.cfg.deadline_s, reasons, stats)
+            accepted = await self._generate(bait_req, ctx, True, t0 + self.cfg.deadline_s, reasons, stats)
         finally:
             self.concurrency.release()
         files = []
         if accepted is not None and accepted.stdout.strip():
             accepted.files = [(bait["path"], accepted.stdout)]
-            await self._db(self.db.commit, er, output_key(er), accepted, "honeytoken")
-            await self._db(self.db.mark_bait, er, tactic, bait["path"])
+            await self._db(self.db.commit, bait_req, output_key(bait_req), accepted, "honeytoken")
+            await self._db(self.db.mark_bait, bait_req, tactic, bait["path"])
             files = [CreatedFile(path=bait["path"], content=accepted.stdout)]
         outcome = "bait" if files else "bait_failed"
         await self._log(
-            er,
+            bait_req,
             ShellResult(outcome=outcome, reasons=reasons, latency_ms=int((time.perf_counter() - t0) * 1000)),
             stats,
         )
